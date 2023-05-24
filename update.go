@@ -28,13 +28,8 @@ func (w *WormDB) Update(qry, updated []byte) error {
 	}
 
 	first := w.Index[pos-1]
-	if cmp := bytes.Compare(first[:prefix], qry[:prefix]); cmp != 0 {
-		// No match as the value is out of range of this block
-		return errors.New("No match, before prefixed value")
-	}
-
 	if len(first) >= len(qry) {
-		if cmp := bytes.Compare(first[prefix:len(qry)], qry[prefix:]); cmp == 0 {
+		if cmp := bytes.Compare(first[:len(qry)], qry); cmp == 0 {
 			// Easy win as the value matched the index
 			w.Index[pos-1] = updated
 			return nil
@@ -53,12 +48,19 @@ func (w *WormDB) Update(qry, updated []byte) error {
 			return nil
 		} else if cmp < 0 {
 			// Next is still less, step forward
+			prefix = w.IndexPrefix[pos]
 			pos++
 			first = next
-			prefix = w.IndexPrefix[pos]
 		} else if cmp > 0 {
 			// Next would be too far
 			break
+		}
+	}
+
+	if prefix > 0 {
+		if cmp := bytes.Compare(first[:prefix], qry[:prefix]); cmp != 0 {
+			// No match as the value is out of range of this block
+			return errors.New("No match, before prefixed value")
 		}
 	}
 
