@@ -1,4 +1,2 @@
-data.idx
-data.wdb
-uuid.idx
-uuid.wdb
+*.idx
+*.wdb

@@ -81,10 +81,3 @@ func (st *searchTree) get(val uint8) *searchTree {
 	}
 	return &st.Tree[val]
 }
-
-type block struct {
-	fh     *os.File
-	offset int
-	prefix uint8
-	Start  []byte
-}

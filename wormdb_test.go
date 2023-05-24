@@ -27,13 +27,49 @@ func ExampleNew() {
 	}
 	// Finalize the load and commit to disk caches.
 	wdb.Finalize()
+}
+func ExampleSaveIndex() {
+	// Create a new wormdb
+	fh, _ := os.Create("uuid.wdb")
+	defer fh.Close()
+	wdb := wormdb.New(fh)
+
+	// Load a file with uuid values and suffixes
+	in, _ := os.Open("uuid_input.dat")
+	scanner := bufio.NewScanner(in)
+	for scanner.Scan() {
+		err := wdb.Add([]byte(scanner.Text()))
+		if err != nil {
+			log.Panic(err)
+		}
+	}
+	// Finalize the load and commit to disk caches.
+	wdb.Finalize()
 
 	// Save off the index for future reloading
 	idx, _ := os.Create("uuid.idx")
 	wdb.SaveIndex(idx)
 	idx.Close()
+}
 
-	// Do a search for how fast the load happens
+func ExampleFind() {
+	// Create a new wormdb
+	fh, _ := os.Create("uuid.wdb")
+	defer fh.Close()
+	wdb := wormdb.New(fh)
+
+	// Load a file with uuid values and suffixes
+	in, _ := os.Open("uuid_input.dat")
+	scanner := bufio.NewScanner(in)
+	for scanner.Scan() {
+		err := wdb.Add([]byte(scanner.Text()))
+		if err != nil {
+			log.Panic(err)
+		}
+	}
+	// Finalize the load and commit to disk caches.
+	wdb.Finalize()
+
 	toFind := "ec83ca32-1e9e-4b6c-8cf5-8e28535630e3."
 	fmt.Println("Looking for:", toFind)
 	find, _ := wdb.Find([]byte(toFind))
@@ -41,6 +77,47 @@ func ExampleNew() {
 	// Output:
 	// Looking for: ec83ca32-1e9e-4b6c-8cf5-8e28535630e3.
 	// Found      : ec83ca32-1e9e-4b6c-8cf5-8e28535630e3.176
+}
+
+func ExampleUpdate() {
+	// Create a new wormdb
+	fh, _ := os.Create("uuid.wdb")
+	defer fh.Close()
+	wdb := wormdb.New(fh)
+
+	// Load a file with uuid values and suffixes
+	in, _ := os.Open("uuid_input.dat")
+	scanner := bufio.NewScanner(in)
+	for scanner.Scan() {
+		err := wdb.Add([]byte(scanner.Text()))
+		if err != nil {
+			log.Panic(err)
+		}
+	}
+	// Finalize the load and commit to disk caches.
+	wdb.Finalize()
+
+	toFind := "ec83ca32-1e9e-4b6c-8cf5-8e28535630e3."
+	fmt.Println("Looking for:", toFind)
+	find, _ := wdb.Find([]byte(toFind))
+	fmt.Println("Found      :", string(find))
+
+	fmt.Println("doing update")
+	err := wdb.Update([]byte(toFind), []byte("ec83ca32-1e9e-4b6c-8cf5-8e28535630e3.123"))
+	if err != nil {
+		log.Panic(err)
+	}
+	find, _ = wdb.Find([]byte(toFind))
+	fmt.Println("Found again:", string(find))
+
+	// Make sure to save the index after the update as the update could happen in
+	// either the datafile or index!!!
+
+	// Output:
+	// Looking for: ec83ca32-1e9e-4b6c-8cf5-8e28535630e3.
+	// Found      : ec83ca32-1e9e-4b6c-8cf5-8e28535630e3.176
+	// doing update
+	// Found again: ec83ca32-1e9e-4b6c-8cf5-8e28535630e3.123
 }
 
 func BenchmarkSearchDriveCached(b *testing.B) {

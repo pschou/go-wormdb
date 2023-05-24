@@ -5,8 +5,8 @@ import (
 	"errors"
 )
 
-// Search for an entry in the database and return the full entry found or error.
-func (w *WormDB) Find(qry []byte) ([]byte, error) {
+// Update an entry in the database, note that the entry cannot move in relation to the other values
+func (w *WormDB) Update(qry, updated []byte) error {
 	base := &w.Tree[qry[0]]
 	pos := base.Start
 
@@ -23,22 +23,23 @@ func (w *WormDB) Find(qry []byte) ([]byte, error) {
 
 	prefix := w.IndexPrefix[pos-1]
 	if int(prefix) > len(qry) {
-		return nil, errors.New("Query too short for exact matching")
+		return errors.New("Query too short for exact matching")
 	}
 
 	first := w.Index[pos-1]
 	if cmp := bytes.Compare(first[:prefix], qry[:prefix]); cmp != 0 {
 		// No match as the value is out of range of this block
-		return nil, nil
+		return errors.New("No match, before prefixed value")
 	}
 
 	if len(first) >= len(qry) {
 		if cmp := bytes.Compare(first[prefix:len(qry)], qry[prefix:]); cmp == 0 {
 			// Easy win as the value matched the index
-			return first, nil
+			w.Index[pos-1] = updated
+			return nil
 		} else if cmp > 0 {
 			// The index value is already larger than what is requested
-			return nil, nil
+			return errors.New("No match, before indexed value")
 		}
 	}
 
@@ -47,7 +48,8 @@ func (w *WormDB) Find(qry []byte) ([]byte, error) {
 		next := w.Index[pos]
 		if cmp := bytes.Compare(next[:len(qry)], qry); cmp == 0 {
 			// Easy win as the value matched the index
-			return first, nil
+			w.Index[pos] = updated
+			return nil
 		} else if cmp < 0 {
 			// Next is still less, step forward
 			pos++
@@ -65,26 +67,30 @@ func (w *WormDB) Find(qry []byte) ([]byte, error) {
 	// Read the block for finding the entry
 	_, err := w.fh.ReadAt(*bufp, int64(w.BlockSize)*int64(pos-1))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	b := *bufp
+	i := 0
 	minSz := len(qry) - int(prefix)
 	// Loop over block looking for the record
 	for sz := b[0] + 1; sz > 0 && len(b) > int(sz); sz = b[0] + 1 {
 		if int(sz) >= minSz {
 			if cmp := bytes.Compare(b[1:minSz+1], qry[prefix:]); cmp == 0 {
 				// Value matched
-				ret := make([]byte, int(prefix)+int(sz)-1)
-				copy(ret, first[:prefix])
-				copy(ret[prefix:], b[1:])
-				return ret, nil
+				if int(prefix)+int(sz)-1 != len(updated) {
+					return errors.New("Length for current value and update must match")
+				}
+				copy(b[1:], updated[prefix:])
+				_, err := w.fh.WriteAt(*bufp, int64(w.BlockSize)*int64(pos-1))
+				return err
 			} else if cmp > 0 {
 				// The next value is already larger than what is requested
-				return nil, nil
+				return errors.New("No match, before indexed value")
 			}
 		}
 		b = b[sz:]
+		i += int(sz)
 	}
-	return nil, nil
+	return errors.New("No match, end of search")
 }
