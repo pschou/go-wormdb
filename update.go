@@ -5,7 +5,8 @@ import (
 	"errors"
 )
 
-// Update an entry in the database, note that the entry cannot move in relation to the other values
+// Update an entry in the database, note that the entry cannot move in relation
+// to the other values nor change size.
 func (w *WormDB) Update(qry, updated []byte) error {
 	base := &w.Tree[qry[0]]
 	pos := base.Start
