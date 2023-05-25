@@ -8,7 +8,7 @@ import (
 // Update an entry in the database, note that the entry cannot move in relation
 // to the other values nor change size.
 func (w *WormDB) Update(qry, updated []byte) error {
-	base := &w.Tree[qry[0]]
+	base := &w.tree[qry[0]]
 	pos := base.Start
 
 	for i := 1; i < len(qry); i++ {
@@ -22,16 +22,16 @@ func (w *WormDB) Update(qry, updated []byte) error {
 		pos = base.Start
 	}
 
-	prefix := w.IndexPrefix[pos-1]
+	prefix := w.indexPrefix[pos-1]
 	if int(prefix) > len(qry) {
 		return errors.New("Query too short for exact matching")
 	}
 
-	first := w.Index[pos-1]
+	first := w.index[pos-1]
 	if len(first) >= len(qry) {
 		if cmp := bytes.Compare(first[:len(qry)], qry); cmp == 0 {
 			// Easy win as the value matched the index
-			w.Index[pos-1] = updated
+			w.index[pos-1] = updated
 			return nil
 		} else if cmp > 0 {
 			// The index value is already larger than what is requested
@@ -40,15 +40,15 @@ func (w *WormDB) Update(qry, updated []byte) error {
 	}
 
 	// Advance if needed
-	for int(pos) < len(w.Index) {
-		next := w.Index[pos]
+	for int(pos) < len(w.index) {
+		next := w.index[pos]
 		if cmp := bytes.Compare(next[:len(qry)], qry); cmp == 0 {
 			// Easy win as the value matched the index
-			w.Index[pos] = updated
+			w.index[pos] = updated
 			return nil
 		} else if cmp < 0 {
 			// Next is still less, step forward
-			prefix = w.IndexPrefix[pos]
+			prefix = w.indexPrefix[pos]
 			pos++
 			first = next
 		} else if cmp > 0 {
@@ -68,7 +68,7 @@ func (w *WormDB) Update(qry, updated []byte) error {
 	defer w.readPool.Put(bufp)
 
 	// Read the block for finding the entry
-	_, err := w.fh.ReadAt(*bufp, int64(w.BlockSize)*int64(pos-1))
+	_, err := w.fh.ReadAt(*bufp, int64(w.blockSize)*int64(pos-1))
 	if err != nil {
 		return err
 	}
@@ -85,7 +85,7 @@ func (w *WormDB) Update(qry, updated []byte) error {
 					return errors.New("Length for current value and update must match")
 				}
 				copy(b[1:], updated[prefix:])
-				_, err := w.fh.WriteAt(*bufp, int64(w.BlockSize)*int64(pos-1))
+				_, err := w.fh.WriteAt(*bufp, int64(w.blockSize)*int64(pos-1))
 				return err
 			} else if cmp > 0 {
 				// The next value is already larger than what is requested

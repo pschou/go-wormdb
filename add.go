@@ -37,13 +37,13 @@ func (w *WormDB) Add(d []byte) error {
 		return errors.New("Out of order data")
 	}
 
-	intraBlock := w.size % w.BlockSize
+	intraBlock := w.size % w.blockSize
 	prefix := prefixLen(w.write_buf[0], d)
 	next := calculateSize(append(w.write_buf, d), prefix)
 
 	// If this new record would cause data to spill into a new block, then write
 	// the current buffer and add an entry to our lookup tree
-	if intraBlock+next > w.BlockSize {
+	if intraBlock+next > w.blockSize {
 		w.writeBuf()
 	}
 	w.write_buf = append(w.write_buf, append(d, []byte{}...))
@@ -62,9 +62,9 @@ func (w *WormDB) writeBuf() {
 	w.index_buf.Write(first)
 
 	// Walk the search tree
-	tree := &w.Tree[first[0]]
+	tree := &w.tree[first[0]]
 
-	pos := uint32(w.size/w.BlockSize) + 1
+	pos := uint32(w.size/w.blockSize) + 1
 	for i := 1; i < prefix+1 && i < len(first); i++ {
 		if len(tree.Tree) == 0 {
 			tree.Start = pos
@@ -81,7 +81,7 @@ func (w *WormDB) writeBuf() {
 		w.fh_buf.Write(wd)
 	}
 	w.fh_buf.WriteTo(w.fh)
-	w.size += w.BlockSize
+	w.size += w.blockSize
 	w.fh.Truncate(int64(w.size))
 	w.fh.Seek(int64(w.size), io.SeekStart)
 	w.write_buf = nil
@@ -96,15 +96,15 @@ func (w *WormDB) Finalize() {
 	w.fh_buf = nil
 
 	// Make the index
-	w.Index = make([][]byte, (w.size+w.BlockSize-1)/w.BlockSize)
-	w.IndexPrefix = make([]uint8, (w.size+w.BlockSize-1)/w.BlockSize)
-	for i := range w.Index {
+	w.index = make([][]byte, (w.size+w.blockSize-1)/w.blockSize)
+	w.indexPrefix = make([]uint8, (w.size+w.blockSize-1)/w.blockSize)
+	for i := range w.index {
 		size, _ := w.index_buf.ReadByte()
-		w.IndexPrefix[i], _ = w.index_buf.ReadByte()
-		w.Index[i] = make([]byte, size)
-		w.index_buf.Read(w.Index[i])
+		w.indexPrefix[i], _ = w.index_buf.ReadByte()
+		w.index[i] = make([]byte, size)
+		w.index_buf.Read(w.index[i])
 	}
-	fillTree(1, w.Tree[:])
+	fillTree(1, w.tree[:])
 }
 
 func fillTree(val uint32, base []searchTree) uint32 {

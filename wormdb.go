@@ -23,13 +23,13 @@ import (
 type WormDB struct {
 	fh        *os.File
 	size      int // size of file
-	BlockSize int // block size (for building index)
+	blockSize int // block size (for building index)
 
-	Index       [][]byte
-	IndexPrefix []uint8
+	index       [][]byte
+	indexPrefix []uint8
 	records     int
 
-	Tree [256]searchTree
+	tree [256]searchTree
 
 	// Buffers for creating a file
 	write_buf [][]byte
