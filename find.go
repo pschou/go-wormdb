@@ -27,19 +27,24 @@ func (w *DB) Find(qry []byte) ([]byte, error) {
 	}
 
 	first := w.index[pos-1]
-	if len(first) >= len(qry) {
-		if cmp := bytes.Compare(first[:len(qry)], qry); cmp == 0 {
-			// Easy win as the value matched the index
-			return first, nil
-		} else if cmp > 0 {
-			// The index value is already larger than what is requested
-			return nil, nil
-		}
+	if len(first) < len(qry) {
+		return nil, errors.New("Query is longer than the data")
+	}
+
+	if cmp := bytes.Compare(first[:len(qry)], qry); cmp == 0 {
+		// Easy win as the value matched the index
+		return first, nil
+	} else if cmp > 0 {
+		// The index value is already larger than what is requested
+		return nil, nil
 	}
 
 	// Advance if needed
 	for int(pos) < len(w.index) {
 		next := w.index[pos]
+		if len(next) < len(qry) {
+			return nil, errors.New("Query is longer than the data")
+		}
 		if cmp := bytes.Compare(next[:len(qry)], qry); cmp == 0 {
 			// Easy win as the value matched the index
 			return first, nil
