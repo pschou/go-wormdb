@@ -7,7 +7,7 @@ import (
 
 // Update an entry in the database, note that the entry cannot move in relation
 // to the other values nor change size.
-func (w *WormDB) Update(qry, updated []byte) error {
+func (w *DB) Update(qry, updated []byte) error {
 	base := &w.tree[qry[0]]
 	pos := base.Start
 
@@ -77,11 +77,11 @@ func (w *WormDB) Update(qry, updated []byte) error {
 	i := 0
 	minSz := len(qry) - int(prefix)
 	// Loop over block looking for the record
-	for sz := b[0] + 1; sz > 0 && len(b) > int(sz); sz = b[0] + 1 {
+	for sz := b[0]; sz > 0 && len(b) > int(sz); sz = b[0] {
 		if int(sz) >= minSz {
 			if cmp := bytes.Compare(b[1:minSz+1], qry[prefix:]); cmp == 0 {
 				// Value matched
-				if int(prefix)+int(sz)-1 != len(updated) {
+				if int(prefix)+int(sz) != len(updated) {
 					return errors.New("Length for current value and update must match")
 				}
 				copy(b[1:], updated[prefix:])
@@ -92,8 +92,8 @@ func (w *WormDB) Update(qry, updated []byte) error {
 				return errors.New("No match, before indexed value")
 			}
 		}
-		b = b[sz:]
-		i += int(sz)
+		b = b[int(sz)+1:]
+		i += int(sz) + 1
 	}
 	return errors.New("No match, end of search")
 }

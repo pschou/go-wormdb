@@ -20,7 +20,7 @@ import (
 	"sync"
 )
 
-type WormDB struct {
+type DB struct {
 	fh        *os.File
 	size      int // size of file
 	blockSize int // block size (for building index)

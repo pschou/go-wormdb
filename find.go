@@ -6,7 +6,7 @@ import (
 )
 
 // Search for an entry in the database and return the full entry found or error.
-func (w *WormDB) Find(qry []byte) ([]byte, error) {
+func (w *DB) Find(qry []byte) ([]byte, error) {
 	base := &w.tree[qry[0]]
 	pos := base.Start
 
@@ -73,11 +73,11 @@ func (w *WormDB) Find(qry []byte) ([]byte, error) {
 	b := *bufp
 	minSz := len(qry) - int(prefix)
 	// Loop over block looking for the record
-	for sz := b[0] + 1; sz > 0 && len(b) > int(sz); sz = b[0] + 1 {
+	for sz := b[0]; sz > 0 && len(b) > int(sz); sz = b[0] {
 		if int(sz) >= minSz {
 			if cmp := bytes.Compare(b[1:minSz+1], qry[prefix:]); cmp == 0 {
 				// Value matched
-				ret := make([]byte, int(prefix)+int(sz)-1)
+				ret := make([]byte, int(prefix)+int(sz))
 				copy(ret, first[:prefix])
 				copy(ret[prefix:], b[1:])
 				return ret, nil
@@ -86,7 +86,7 @@ func (w *WormDB) Find(qry []byte) ([]byte, error) {
 				return nil, nil
 			}
 		}
-		b = b[sz:]
+		b = b[sz+1:]
 	}
 	return nil, nil
 }

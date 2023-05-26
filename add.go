@@ -23,7 +23,7 @@ func prefixLen(a, b []byte) int {
 
 // Add entries to the database.  They must already be in byte order!
 // Note: Add is not thread safe.
-func (w *WormDB) Add(d []byte) error {
+func (w *DB) Add(d []byte) error {
 	if w.fh_buf == nil {
 		return errors.New("Cannot add record, already finalized")
 	}
@@ -50,7 +50,7 @@ func (w *WormDB) Add(d []byte) error {
 	return nil
 }
 
-func (w *WormDB) writeBuf() {
+func (w *DB) writeBuf() {
 	// Recalculate the prefix
 	first := w.write_buf[0]
 	last := w.write_buf[len(w.write_buf)-1]
@@ -88,7 +88,7 @@ func (w *WormDB) writeBuf() {
 }
 
 // Finalize the addition process, and write the index to disk (optional).
-func (w *WormDB) Finalize() {
+func (w *DB) Finalize() {
 	if len(w.write_buf) > 0 {
 		w.writeBuf()
 	}
