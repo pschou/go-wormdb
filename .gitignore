@@ -1,2 +1,4 @@
 *.idx
 *.wdb
+*.test
+*_wip
