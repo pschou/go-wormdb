@@ -45,13 +45,13 @@ func (w *DB) Add(d []byte) error {
 	// If this new record would cause data to spill into a new block, then write
 	// the current buffer and add an entry to our lookup tree
 	if intraBlock+next > w.blockSize {
-		w.writeBuf()
+		w.writeBuf(true)
 	}
 	w.write_buf = append(w.write_buf, append(d, []byte{}...))
 	return nil
 }
 
-func (w *DB) writeBuf() {
+func (w *DB) writeBuf(pad bool) {
 	// Recalculate the prefix
 	first := w.write_buf[0]
 	last := w.write_buf[len(w.write_buf)-1]
@@ -82,16 +82,21 @@ func (w *DB) writeBuf() {
 		w.fh_buf.Write(wd)
 	}
 	w.fh_buf.WriteTo(w.fh)
-	w.size += w.blockSize
-	w.fh.Truncate(int64(w.size))
-	w.fh.Seek(int64(w.size), io.SeekStart)
-	w.write_buf = nil
+	if pad {
+		w.size += w.blockSize
+		w.fh.Truncate(int64(w.size))
+		w.fh.Seek(int64(w.size), io.SeekStart)
+		w.write_buf = nil
+	} else {
+		w.size++
+		w.fh_buf.WriteByte(0)
+	}
 }
 
 // Finalize the addition process, and write the index to disk (optional).
 func (w *DB) Finalize() {
 	if len(w.write_buf) > 0 {
-		w.writeBuf()
+		w.writeBuf(false)
 	}
 	// Prevent reading more into memory
 	w.fh_buf = nil

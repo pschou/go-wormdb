@@ -70,12 +70,12 @@ func (w *DB) Find(qry []byte) ([]byte, error) {
 	defer w.readPool.Put(bufp)
 
 	// Read the block for finding the entry
-	_, err := w.fh.ReadAt(*bufp, int64(w.blockSize)*int64(pos-1))
+	n, err := w.fh.ReadAt(*bufp, int64(w.blockSize)*int64(pos-1))
 	if err != nil {
 		return nil, err
 	}
 
-	b := *bufp
+	b := (*bufp)[:n]
 	minSz := len(qry) - int(prefix)
 	// Loop over block looking for the record
 	for sz := b[0]; sz > 0 && len(b) > int(sz); sz = b[0] {
