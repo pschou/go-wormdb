@@ -48,7 +48,7 @@ func (w *DB) SaveIndex(fh io.Writer) error {
 }
 
 // Save the index into a file
-func (w *DB) SaveIndexFiles(file string) error {
+func (w *DB) SaveIndexFile(file string) error {
 	// Save off the index for future reloading
 	idx, err := os.Create(file)
 	if err != nil {
