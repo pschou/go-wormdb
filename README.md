@@ -34,7 +34,10 @@ Likewise if one searches for `abc123cat` no records will be returned.
 ```golang
   // Create a new wormdb
   fh, _ := os.Create("data.wdb")
-  wdb := wormdb.New(fh)
+	wdb, err := wormdb.New(fh)
+	if err != nil {
+		panic(err)
+	}
   for i := 0; i < 4000; i++ {
     err := wdb.Add([]byte(fmt.Sprintf("blah%05dabc", i)))
     if err != nil {

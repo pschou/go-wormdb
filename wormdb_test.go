@@ -14,7 +14,10 @@ func ExampleNew() {
 	// Create a new wormdb
 	fh, _ := os.Create("uuid.wdb")
 	defer fh.Close()
-	wdb := wormdb.New(fh)
+	wdb, err := wormdb.New(fh)
+	if err != nil {
+		panic(err)
+	}
 
 	// Load a file with uuid values and suffixes
 	in, _ := os.Open("uuid_input.dat")
@@ -32,7 +35,10 @@ func ExampleSaveIndex() {
 	// Create a new wormdb
 	fh, _ := os.Create("uuid.wdb")
 	defer fh.Close()
-	wdb := wormdb.New(fh)
+	wdb, err := wormdb.New(fh)
+	if err != nil {
+		panic(err)
+	}
 
 	// Load a file with uuid values and suffixes
 	in, _ := os.Open("uuid_input.dat")
@@ -56,7 +62,10 @@ func ExampleFind() {
 	// Create a new wormdb
 	fh, _ := os.Create("uuid.wdb")
 	defer fh.Close()
-	wdb := wormdb.New(fh)
+	wdb, err := wormdb.New(fh)
+	if err != nil {
+		panic(err)
+	}
 
 	// Load a file with uuid values and suffixes
 	in, _ := os.Open("uuid_input.dat")
@@ -83,7 +92,10 @@ func ExampleUpdate() {
 	// Create a new wormdb
 	fh, _ := os.Create("uuid.wdb")
 	defer fh.Close()
-	wdb := wormdb.New(fh)
+	wdb, err := wormdb.New(fh)
+	if err != nil {
+		panic(err)
+	}
 
 	// Load a file with uuid values and suffixes
 	in, _ := os.Open("uuid_input.dat")
@@ -103,7 +115,7 @@ func ExampleUpdate() {
 	fmt.Println("Found      :", string(find))
 
 	fmt.Println("doing update")
-	err := wdb.Update([]byte(toFind), []byte("ec83ca32-1e9e-4b6c-8cf5-8e28535630e3.123"))
+	err = wdb.Update([]byte(toFind), []byte("ec83ca32-1e9e-4b6c-8cf5-8e28535630e3.123"))
 	if err != nil {
 		log.Panic(err)
 	}
@@ -146,7 +158,10 @@ func BenchmarkSearch(b *testing.B) {
 func ExampleNewAndLoad() {
 	fh, _ := os.Create("data.wdb")
 	{ // Create a new wormdb
-		wdb := wormdb.New(fh)
+		wdb, err := wormdb.New(fh)
+		if err != nil {
+			panic(err)
+		}
 		for i := 0; i < 4000; i++ {
 			err := wdb.Add([]byte(fmt.Sprintf("blah%05dabc", i)))
 			if err != nil {

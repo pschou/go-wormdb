@@ -3,21 +3,26 @@ package wormdb
 import (
 	"bytes"
 	"encoding/gob"
+	"errors"
 	"io"
 	"os"
 	"sync"
 )
 
 // Create a new worm-db using a file as storage.
-func New(fh *os.File) *DB {
+func New(fh *os.File) (*DB, error) {
 	ret := &DB{fh: fh, blockSize: 4096, fh_buf: new(bytes.Buffer), index_buf: new(bytes.Buffer)}
+	_, err := fh.Write([]byte("WORMDB"))
+	if err != nil {
+		return nil, err
+	}
 	ret.readPool = sync.Pool{
 		New: func() any {
 			b := make([]byte, ret.blockSize)
 			return &b
 		},
 	}
-	return ret
+	return ret, nil
 }
 
 type saveDB struct {
@@ -29,6 +34,10 @@ type saveDB struct {
 
 // Save the index into a writer
 func (w *DB) SaveIndex(fh io.Writer) error {
+	_, err := fh.Write([]byte("WORMIX"))
+	if err != nil {
+		return err
+	}
 	enc := gob.NewEncoder(fh)
 	return enc.Encode(saveDB{
 		BlockSize:   w.blockSize,
@@ -65,9 +74,21 @@ func LoadFiles(db, idx string) (*DB, error) {
 
 // Load a worm-db and index for usage.
 func Load(db, idx *os.File) (*DB, error) {
+	buf := make([]byte, 6)
+	n, err := db.ReadAt(buf, 0)
+	if n != 6 || string(buf) != "WORMDB" {
+		return nil, errors.New("Invalid WORMDB data header")
+	}
+
+	n, err = idx.ReadAt(buf, 0)
+	if n != 6 || string(buf) != "WORMIX" {
+		return nil, errors.New("Invalid WORMDB index header")
+	}
+
+	idx.Seek(6, io.SeekStart)
 	dec := gob.NewDecoder(idx)
 	load := new(saveDB)
-	err := dec.Decode(load)
+	err = dec.Decode(load)
 	if err != nil {
 		return nil, err
 	}

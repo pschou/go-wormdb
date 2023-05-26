@@ -76,6 +76,9 @@ func (w *DB) Find(qry []byte) ([]byte, error) {
 	}
 
 	b := (*bufp)[:n]
+	if pos-1 == 0 {
+		b = b[6:]
+	}
 	minSz := len(qry) - int(prefix)
 	// Loop over block looking for the record
 	for sz := b[0]; sz > 0 && len(b) > int(sz); sz = b[0] {
