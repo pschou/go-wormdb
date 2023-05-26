@@ -3,6 +3,7 @@ package wormdb
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -34,7 +35,7 @@ func (w *DB) Add(d []byte) error {
 	}
 	last := w.write_buf[len(w.write_buf)-1]
 	if bytes.Compare(last, d) != -1 {
-		return errors.New("Out of order data")
+		return fmt.Errorf("Out of order data %q > %q", last, d)
 	}
 
 	intraBlock := w.size % w.blockSize
