@@ -28,9 +28,9 @@ type saveDB struct {
 }
 
 // Save the index into a file
-func (w *DB) SaveIndex(fh io.Writer) {
+func (w *DB) SaveIndex(fh io.Writer) error {
 	enc := gob.NewEncoder(fh)
-	enc.Encode(saveDB{
+	return enc.Encode(saveDB{
 		BlockSize:   w.blockSize,
 		Index:       w.index,
 		IndexPrefix: w.indexPrefix,
