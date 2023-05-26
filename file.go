@@ -27,7 +27,7 @@ type saveDB struct {
 	Index       [][]byte
 }
 
-// Save the index into a file
+// Save the index into a writer
 func (w *DB) SaveIndex(fh io.Writer) error {
 	enc := gob.NewEncoder(fh)
 	return enc.Encode(saveDB{
@@ -36,6 +36,31 @@ func (w *DB) SaveIndex(fh io.Writer) error {
 		IndexPrefix: w.indexPrefix,
 		Tree:        w.tree,
 	})
+}
+
+// Save the index into a file
+func (w *DB) SaveIndexFiles(file string) error {
+	// Save off the index for future reloading
+	idx, err := os.Create(file)
+	if err != nil {
+		panic(err)
+	}
+	defer idx.Close()
+	return w.SaveIndex(idx)
+}
+
+// Load a worm-db and index for usage.
+func LoadFiles(db, idx string) (*DB, error) {
+	dbf, err := os.Open(db)
+	if err != nil {
+		return nil, err
+	}
+	idxf, err := os.Open(idx)
+	if err != nil {
+		return nil, err
+	}
+	defer idxf.Close()
+	return Load(dbf, idxf)
 }
 
 // Load a worm-db and index for usage.
