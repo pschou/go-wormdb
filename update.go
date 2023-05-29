@@ -41,7 +41,8 @@ func (w *DB) Update(qry, updated []byte) error {
 	}
 
 	// Advance if needed
-	for next := w.index[pos]; int(pos) < len(w.index); next = w.index[pos] {
+	for int(pos) < len(w.index) {
+		next := w.index[pos]
 		if cmp := bytes.Compare(next[:len(qry)], qry); cmp == 0 {
 			// Easy win as the value matched the index
 			w.index[pos] = updated

@@ -41,7 +41,8 @@ func (w *DB) Find(qry []byte) ([]byte, error) {
 	}
 
 	// Advance if needed
-	for next := w.index[pos]; int(pos) < len(w.index); next = w.index[pos] {
+	for int(pos) < len(w.index) {
+		next := w.index[pos]
 		if len(next) < len(qry) {
 			return nil, errors.New("Query is longer than the data")
 		}
