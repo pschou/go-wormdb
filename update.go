@@ -3,6 +3,7 @@ package wormdb
 import (
 	"bytes"
 	"errors"
+	"io"
 )
 
 // Update an entry in the database, note that the entry cannot move in relation
@@ -40,8 +41,7 @@ func (w *DB) Update(qry, updated []byte) error {
 	}
 
 	// Advance if needed
-	for int(pos) < len(w.index) {
-		next := w.index[pos]
+	for next := w.index[pos]; int(pos) < len(w.index); next = w.index[pos] {
 		if cmp := bytes.Compare(next[:len(qry)], qry); cmp == 0 {
 			// Easy win as the value matched the index
 			w.index[pos] = updated
@@ -69,12 +69,18 @@ func (w *DB) Update(qry, updated []byte) error {
 
 	// Read the block for finding the entry
 	n, err := w.fh.ReadAt(*bufp, int64(w.blockSize)*int64(pos-1))
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return err
 	}
 
 	b := (*bufp)[:n]
-	i := 0
+
+	// Ignore the magic bytes
+	if pos-1 == 0 {
+		b = b[6:]
+	}
+
+	//i := 0
 	minSz := len(qry) - int(prefix)
 	// Loop over block looking for the record
 	for sz := b[0]; sz > 0 && len(b) > int(sz); sz = b[0] {
@@ -93,7 +99,7 @@ func (w *DB) Update(qry, updated []byte) error {
 			}
 		}
 		b = b[int(sz)+1:]
-		i += int(sz) + 1
+		//	i += int(sz) + 1
 	}
 	return errors.New("No match, end of search")
 }

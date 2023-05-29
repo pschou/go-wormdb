@@ -3,6 +3,7 @@ package wormdb
 import (
 	"bytes"
 	"errors"
+	"io"
 )
 
 // Search for an entry in the database and return the full entry found or error.
@@ -40,8 +41,7 @@ func (w *DB) Find(qry []byte) ([]byte, error) {
 	}
 
 	// Advance if needed
-	for int(pos) < len(w.index) {
-		next := w.index[pos]
+	for next := w.index[pos]; int(pos) < len(w.index); next = w.index[pos] {
 		if len(next) < len(qry) {
 			return nil, errors.New("Query is longer than the data")
 		}
@@ -71,14 +71,17 @@ func (w *DB) Find(qry []byte) ([]byte, error) {
 
 	// Read the block for finding the entry
 	n, err := w.fh.ReadAt(*bufp, int64(w.blockSize)*int64(pos-1))
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return nil, err
 	}
 
 	b := (*bufp)[:n]
+
+	// Ignore the magic bytes
 	if pos-1 == 0 {
 		b = b[6:]
 	}
+
 	minSz := len(qry) - int(prefix)
 	// Loop over block looking for the record
 	for sz := b[0]; sz > 0 && len(b) > int(sz); sz = b[0] {

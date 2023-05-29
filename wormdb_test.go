@@ -23,13 +23,16 @@ func ExampleNew() {
 	in, _ := os.Open("uuid_input.dat")
 	scanner := bufio.NewScanner(in)
 	for scanner.Scan() {
-		err := wdb.Add([]byte(scanner.Text()))
+		err = wdb.Add([]byte(scanner.Text()))
 		if err != nil {
 			log.Panic(err)
 		}
 	}
 	// Finalize the load and commit to disk caches.
-	wdb.Finalize()
+	err = wdb.Finalize()
+	if err != nil {
+		log.Panic(err)
+	}
 }
 func ExampleSaveIndex() {
 	// Create a new wormdb

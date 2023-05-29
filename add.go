@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 )
 
 func calculateSize(dat [][]byte, stripPrefix int) (sz int) {
@@ -24,7 +23,7 @@ func prefixLen(a, b []byte) int {
 
 // Add entries to the database.  They must already be in byte order!
 // Note: Add is not thread safe.
-func (w *DB) Add(d []byte) error {
+func (w *DB) Add(d []byte) (err error) {
 	if w.fh_buf == nil {
 		return errors.New("Cannot add record, already finalized")
 	}
@@ -45,13 +44,13 @@ func (w *DB) Add(d []byte) error {
 	// If this new record would cause data to spill into a new block, then write
 	// the current buffer and add an entry to our lookup tree
 	if intraBlock+next > w.blockSize {
-		w.writeBuf(true)
+		err = w.writeBuf(true)
 	}
 	w.write_buf = append(w.write_buf, append(d, []byte{}...))
-	return nil
+	return
 }
 
-func (w *DB) writeBuf(pad bool) {
+func (w *DB) writeBuf(pad bool) (err error) {
 	// Recalculate the prefix
 	first := w.write_buf[0]
 	last := w.write_buf[len(w.write_buf)-1]
@@ -73,31 +72,39 @@ func (w *DB) writeBuf(pad bool) {
 		tree = tree.make(first[i])
 	}
 
-	w.fh_buf.Reset()
-
 	// Write the raw data to disk in the format: length (byte) and then data
+	var n int
 	for _, wd := range w.write_buf {
 		wd = wd[prefix:]
 		w.fh_buf.WriteByte(byte(len(wd)))
-		w.fh_buf.Write(wd)
+		n, err = w.fh_buf.Write(wd)
+		if err != nil {
+			return
+		}
+		w.size += n + 1
 	}
-	w.fh_buf.WriteTo(w.fh)
 	if pad {
-		w.size += w.blockSize
-		w.fh.Truncate(int64(w.size))
-		w.fh.Seek(int64(w.size), io.SeekStart)
-		w.write_buf = nil
+		for w.size%w.blockSize > 0 {
+			w.fh_buf.WriteByte(0)
+			w.size++
+		}
 	} else {
 		w.size++
 		w.fh_buf.WriteByte(0)
 	}
+	w.write_buf = nil
+	return
 }
 
 // Finalize the addition process, and write the index to disk (optional).
-func (w *DB) Finalize() {
+func (w *DB) Finalize() (err error) {
 	if len(w.write_buf) > 0 {
-		w.writeBuf(false)
+		err = w.writeBuf(false)
+		if err != nil {
+			return
+		}
 	}
+	w.fh_buf.Flush()
 	// Prevent reading more into memory
 	w.fh_buf = nil
 
@@ -111,6 +118,7 @@ func (w *DB) Finalize() {
 		w.index_buf.Read(w.index[i])
 	}
 	fillTree(1, w.tree[:])
+	return
 }
 
 func fillTree(val uint32, base []searchTree) uint32 {

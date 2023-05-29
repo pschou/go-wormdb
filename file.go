@@ -1,6 +1,7 @@
 package wormdb
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/gob"
 	"errors"
@@ -11,7 +12,7 @@ import (
 
 // Create a new worm-db using a file as storage.
 func New(fh *os.File) (*DB, error) {
-	ret := &DB{fh: fh, blockSize: 4096, fh_buf: new(bytes.Buffer), index_buf: new(bytes.Buffer)}
+	ret := &DB{fh: fh, blockSize: 4096, fh_buf: bufio.NewWriterSize(fh, 4<<20), index_buf: new(bytes.Buffer), size: 6}
 	_, err := fh.Write([]byte("WORMDB"))
 	if err != nil {
 		return nil, err

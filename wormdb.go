@@ -15,6 +15,7 @@
 package wormdb
 
 import (
+	"bufio"
 	"bytes"
 	"os"
 	"sync"
@@ -33,7 +34,7 @@ type DB struct {
 
 	// Buffers for creating a file
 	write_buf [][]byte
-	fh_buf    *bytes.Buffer
+	fh_buf    *bufio.Writer
 	index_buf *bytes.Buffer
 	last      []byte
 	readPool  sync.Pool
