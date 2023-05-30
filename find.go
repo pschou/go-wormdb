@@ -28,14 +28,15 @@ func (w *DB) Find(qry []byte) ([]byte, error) {
 	}
 
 	first := w.index[pos-1]
-	if len(first) < len(qry) {
-		return nil, errors.New("Query is longer than the data")
-	}
-
-	if cmp := bytes.Compare(first[:len(qry)], qry); cmp == 0 {
-		// Easy win as the value matched the index
-		return first, nil
-	} else if cmp > 0 {
+	if len(first) >= len(qry) {
+		if cmp := bytes.Compare(first[:len(qry)], qry); cmp == 0 {
+			// Easy win as the value matched the index
+			return first, nil
+		} else if cmp > 0 {
+			// The index value is already larger than what is requested
+			return nil, nil
+		}
+	} else if bytes.Compare(first, qry) > 0 {
 		// The index value is already larger than what is requested
 		return nil, nil
 	}
@@ -46,22 +47,27 @@ func (w *DB) Find(qry []byte) ([]byte, error) {
 		if len(next) < len(qry) {
 			return nil, errors.New("Query is longer than the data")
 		}
-		if cmp := bytes.Compare(next[:len(qry)], qry); cmp == 0 {
-			// Easy win as the value matched the index
-			return first, nil
-		} else if cmp < 0 {
-			// Next is still less, step forward
-			prefix = w.indexPrefix[pos]
-			pos++
-			first = next
-		} else if cmp > 0 {
+		if len(next) >= len(qry) {
+			if cmp := bytes.Compare(next[:len(qry)], qry); cmp == 0 {
+				// Easy win as the value matched the index
+				return first, nil
+			} else if cmp < 0 {
+				// Next is still less, step forward
+				prefix = w.indexPrefix[pos]
+				pos++
+				first = next
+			} else if cmp > 0 {
+				// Next would be too far
+				break
+			}
+		} else if bytes.Compare(first, qry) > 0 {
 			// Next would be too far
 			break
 		}
 	}
 
 	if prefix > 0 {
-		if cmp := bytes.Compare(first[:prefix], qry[:prefix]); cmp != 0 {
+		if !bytes.HasPrefix(qry, first[:prefix]) {
 			// No match as the value is out of range of this block
 			return nil, nil
 		}

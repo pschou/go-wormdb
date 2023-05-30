@@ -34,6 +34,37 @@ func ExampleNew() {
 		log.Panic(err)
 	}
 }
+
+func ExampleScanner() {
+	// Create a new wormdb
+	fh, _ := os.Create("uuid.wdb")
+	defer fh.Close()
+	wdb, err := wormdb.New(fh)
+	if err != nil {
+		panic(err)
+	}
+
+	// Load a file with uuid values and suffixes
+	in, _ := os.Open("uuid_input.dat")
+	scanner := bufio.NewScanner(in)
+	for scanner.Scan() {
+		err = wdb.Add([]byte(scanner.Text()))
+		if err != nil {
+			log.Panic(err)
+		}
+	}
+	// Finalize the load and commit to disk caches.
+	err = wdb.Finalize()
+	if err != nil {
+		log.Panic(err)
+	}
+
+	w := wdb.NewScanner()
+	for i := 0; i < 500 && w.Scan(); i++ {
+		fmt.Println(w.Text())
+	}
+}
+
 func ExampleSaveIndex() {
 	// Create a new wormdb
 	fh, _ := os.Create("uuid.wdb")

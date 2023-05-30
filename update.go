@@ -38,6 +38,8 @@ func (w *DB) Update(qry, updated []byte) error {
 			// The index value is already larger than what is requested
 			return errors.New("No match, before indexed value")
 		}
+	} else if bytes.Compare(first, qry) > 0 {
+		return errors.New("No match, before indexed value")
 	}
 
 	// Advance if needed
@@ -90,6 +92,10 @@ func (w *DB) Update(qry, updated []byte) error {
 				// Value matched
 				if int(prefix)+int(sz) != len(updated) {
 					return errors.New("Length for current value and update must match")
+				}
+				if bytes.Compare(b[1:], updated[prefix:]) == 0 {
+					// They are the same, do nothing
+					return nil
 				}
 				copy(b[1:], updated[prefix:])
 				_, err := w.fh.WriteAt((*bufp)[:n], int64(w.blockSize)*int64(pos-1))

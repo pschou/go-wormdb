@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 )
 
 func calculateSize(dat [][]byte, stripPrefix int) (sz int) {
@@ -105,6 +106,9 @@ func (w *DB) Finalize() (err error) {
 		}
 	}
 	w.fh_buf.Flush()
+	if f, ok := w.fh.(*os.File); ok {
+		f.Sync()
+	}
 	// Prevent reading more into memory
 	w.fh_buf = nil
 
