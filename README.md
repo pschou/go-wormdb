@@ -23,33 +23,27 @@ abc124dob
 ```
 
 ```golang
-rec, _ := wdb.Find("abc123")
-fmt.Println(string(rec))   // Prints: abc123bat
-```
-
-Thus a search for `abc123` will get `abc123bat` as the reply.
-
-Likewise if one searches for `abc123cat` no records will be returned.
-
-```golang
-  // Create a new wormdb
-  fh, _ := os.Create("data.wdb")
-	wdb, err := wormdb.New(fh)
-	if err != nil {
-		panic(err)
-	}
-  for i := 0; i < 4000; i++ {
-    err := wdb.Add([]byte(fmt.Sprintf("blah%05dabc", i)))
-    if err != nil {
-      log.Panic(err)
-    }
+func ExampleNew() {
+  f, err := os.Create("new.db")
+  if err != nil {
+    log.Fatal(err)
   }
-  wdb.Finalize()
+  db, err := bwdb.New(f, 0, 4096)
+  if err != nil {
+    log.Fatal(err)
+  }
+  defer db.Close()
+  db.Add([]byte("hello world"))
+  db.Add([]byte("hello world abc"))
+  db.Add([]byte("hello world def"))
+  db.Add([]byte("hello world ghi"))
 
-  // Save off the index for loading
-  idx, _ := os.Create("data.idx")
-  wdb.SaveIndex(idx)
-  idx.Close()
+  db.Finalize()
+  rec, _ := db.Get([]byte("hello world ab"))
+  fmt.Println(string(rec))
+  // Output:
+  // hello world abc
+}
 ```
 
 Some benchmarking for query times:
