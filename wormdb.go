@@ -15,33 +15,29 @@
 package wormdb
 
 import (
-	"bufio"
-	"bytes"
 	"io"
-	"sync"
+	"time"
 )
 
 type DB struct {
-	fh        ReaderAtWriter
-	size      int // size of file
-	blockSize int // block size (for building index)
+	fh    ReaderWriterAt
+	Bloom bloom.Filter
 
-	index       [][]byte
-	indexPrefix []uint8
-	records     int
-
-	tree [256]searchTree
-
-	// Buffers for creating a file
-	write_buf [][]byte
-	fh_buf    *bufio.Writer
-	index_buf *bytes.Buffer
-	last      []byte
-	readPool  sync.Pool
+	Index     [][]byte
+	IndexStep [256]int
+	Updated   time.Time // Last updated
+	BlockSize int       // block size for disk storage
 }
 
-type ReaderAtWriter interface {
+var header struct {
+	N uint64 // Entry count
+	B uint64 // Bloom filter size in bytes
+	S uint64 // Search tree size in bytes
+	F uint64 // Fragment location (zero if not fragmented)
+	H uint32 // Quickie hash for consistency
+}
+
+type ReaderWriterAt interface {
 	io.ReaderAt
 	io.WriterAt
-	io.Writer
 }

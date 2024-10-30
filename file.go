@@ -1,22 +1,32 @@
 package wormdb
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/gob"
 	"errors"
 	"io"
 	"os"
 	"sync"
+	"time"
 )
 
-// Create a new worm-db using a file as storage.
-func New(fh ReaderAtWriter) (*DB, error) {
-	ret := &DB{fh: fh, blockSize: 4096, fh_buf: bufio.NewWriterSize(fh, 4<<20), index_buf: new(bytes.Buffer), size: 6}
-	_, err := fh.Write([]byte("WORMDB"))
+// Create a new worm-db using a ReaderAtWriter as storage.
+// For example, one can use an *os.File.
+func New(fh ReaderAtWriter, bloomSize int) (*DB, error) {
+	ret := &DB{fh: fh, blockSize: 4096, header: header}
+	_, err := fh.WriteAt([]byte("WORMDB00"), 0)
 	if err != nil {
 		return nil, err
 	}
+	// Create a new empty header
+	hdr := &header{B: bloomSize, T: time.Now()}
+	var d bytes.Buffer
+	enc := gob.NewEncoder(&d)
+	err = enc.Encode(hdr)
+	if err != nil {
+		return nil, err
+	}
+
 	ret.readPool = sync.Pool{
 		New: func() any {
 			b := make([]byte, ret.blockSize)
@@ -24,6 +34,10 @@ func New(fh ReaderAtWriter) (*DB, error) {
 		},
 	}
 	return ret, nil
+}
+
+// Write the headers, bloom filter, and index to disk
+func (d DB) Sync() error {
 }
 
 type saveDB struct {
