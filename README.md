@@ -45,15 +45,3 @@ func ExampleNew() {
   // hello world abc
 }
 ```
-
-Some benchmarking for query times:
-```
-$ go test -bench=.
-goos: linux
-goarch: amd64
-pkg: github.com/pschou/go-wormdb
-cpu: Intel(R) Xeon(R) CPU           X5650  @ 2.67GHz
-BenchmarkSearchDriveCached-12             235136              4923 ns/op
-BenchmarkSearch-12                        188329              6407 ns/op
-PASS
-```
