@@ -3,11 +3,14 @@ package bwdb
 import (
 	"bufio"
 	"bytes"
+	"container/list"
 	"fmt"
 	"io"
 	"os"
 	"slices"
 	"sync"
+
+	"github.com/alphadose/haxmap"
 )
 
 type DB struct {
@@ -17,9 +20,22 @@ type DB struct {
 	shift    int   // must be in shift bits
 	readpool sync.Pool
 
-	// Writing function
+	// Writing functions (only available when newly created before finalize)
 	prev     []byte
 	writeBuf *bufio.Writer
+
+	// Lookup buffer
+	lookupBuf *haxmap.Map[string, []byte]
+	bufList   *list.List
+	bufMutex  sync.Mutex
+}
+
+func (d DB) InitBuffer(size int) {
+	d.lookupBuf = haxmap.New[string, []byte]()
+	d.bufList = list.New()
+	for ; size > 0; size-- {
+		d.bufList.PushBack(nil)
+	}
 }
 
 // Create a WORM db using the os.File handle to write a Write-Once-Read-Many
@@ -92,6 +108,12 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 		n--
 	}
 
+	if d.lookupBuf != nil {
+		if val, ok := d.lookupBuf.Get(string(needle)); ok {
+			return handler(val)
+		}
+	}
+
 	var b []byte
 	{
 		// Pull a buffer from the pool to read to
@@ -119,6 +141,24 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 
 		// Test if match is found
 		if bytes.HasPrefix(rec, needle) {
+			if d.lookupBuf != nil {
+				// A buffer is defined, add this element to the buffer
+
+				// Create a copy in memory
+				tmp := make([]byte, len(rec))
+				d.bufMutex.Lock()
+				// Add this to hash map and list
+				d.lookupBuf.Set(string(tmp[:len(needle)]), tmp)
+				d.bufList.PushFront(tmp)
+
+				// Get the front and remove it
+				first := d.bufList.Front()
+				d.bufList.Remove(first)
+				if first.Value != nil {
+					d.lookupBuf.Del(first.Value.(string))
+				}
+				d.bufMutex.Unlock()
+			}
 			return handler(rec)
 		}
 		// Trim off the record from the block
