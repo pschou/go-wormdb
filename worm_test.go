@@ -51,8 +51,10 @@ func ExampleNew() {
 	db.Add([]byte("hello world ghi"))
 
 	db.Finalize()
-	rec, _ := db.Get([]byte("hello world ab"))
-	fmt.Println(string(rec))
+	db.Get([]byte("hello world ab"), func(rec []byte) error {
+		fmt.Println(string(rec))
+		return nil
+	})
 	// Output:
 	// hello world abc
 }
@@ -68,8 +70,10 @@ func ExampleOpen() {
 	}
 	// Note that the index must be stored out of band
 	db.Index = index
-	rec, err := db.Get([]byte("hello world qrs"))
-	fmt.Printf("rec: %q err: %v\n", rec, err)
+	db.Get([]byte("hello world qrs"), func(rec []byte) error {
+		fmt.Printf("rec: %q err: %v\n", rec, err)
+		return nil
+	})
 	db.Close()
 	// Output:
 	// rec: "hello world qrs00000000000000000000000000000000000000000000000000000000000000000000000000000000" err: <nil>

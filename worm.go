@@ -71,18 +71,22 @@ func Open(file *os.File, offset, blocksize int64) (*DB, error) {
 	}, nil
 }
 
-// Search for a record in a wormdb.  The first matching prefix will be returned
-func (d DB) Get(needle []byte) ([]byte, error) {
+// Search for a record in a wormdb and call func if a match is found.  Only the
+// first matching prefix will be returned, so larger matches will be ignored.
+//
+// The slice MUST be copied to a local variable as the underlying byte slice
+// will be reused in future function calls.
+func (d DB) Get(needle []byte, handler func([]byte) error) error {
 	n, ok := slices.BinarySearchFunc(d.Index, needle, bytes.Compare)
 	//fmt.Println("binary search found", n, ok)
 	if !ok {
 		if n == 0 {
 			// Try providing the first
 			if bytes.HasPrefix(d.Index[0], needle) {
-				return d.Index[0], nil
+				return handler(d.Index[0])
 			}
 			// If the record is before the first, give up
-			return nil, nil
+			return nil
 		}
 		// Go back one step
 		n--
@@ -97,7 +101,7 @@ func (d DB) Get(needle []byte) ([]byte, error) {
 		rn, err := d.file.ReadAt(buf, (int64(n)+d.offset)<<d.shift)
 		//fmt.Println("reading bytes", rn)
 		if err != nil && err != io.EOF {
-			return nil, err
+			return err
 		}
 		b = buf[0:rn]
 		//fmt.Printf("read %q\n", b)
@@ -108,19 +112,19 @@ func (d DB) Get(needle []byte) ([]byte, error) {
 	for len(b) > 0 && b[0] > 0 {
 		//fmt.Println("len b", len(b), "b0", b[0])
 		if len(b) <= int(b[0]) {
-			return nil, fmt.Errorf("Record too short block %d", n)
+			return fmt.Errorf("Record too short block %d", n)
 		}
 		rec = append(rec, b[1:int(b[0])+1]...)
 		//fmt.Printf("rec %q   bslice %q\n", rec, b[1:(int(b[0])+1)])
 
 		// Test if match is found
 		if bytes.HasPrefix(rec, needle) {
-			return rec, nil
+			return handler(rec)
 		}
 		// Trim off the record from the block
 		b = b[b[0]+1:]
 		if len(b) == 0 {
-			return nil, nil
+			return nil
 		}
 		//fmt.Printf("b %q\n", b)
 		// Determine the re-used portion of the record
@@ -130,7 +134,7 @@ func (d DB) Get(needle []byte) ([]byte, error) {
 		//fmt.Printf("loop b %q\n", b)
 		//return nil, nil
 	}
-	return nil, nil
+	return nil
 }
 
 // Add a record to a wormdb when it is in write mode.
