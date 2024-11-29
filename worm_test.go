@@ -1,4 +1,4 @@
-package bwdb_test
+package wormdb_test
 
 import (
 	"fmt"

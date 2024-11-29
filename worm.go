@@ -1,9 +1,8 @@
-package bwdb
+package wormdb
 
 import (
 	"bufio"
 	"bytes"
-	"container/list"
 	"fmt"
 	"io"
 	"os"
@@ -25,17 +24,19 @@ type DB struct {
 	writeBuf *bufio.Writer
 
 	// Lookup buffer
-	lookupBuf *haxmap.Map[string, []byte]
-	bufList   *list.List
+	lookupBuf *haxmap.Map[string, *result]
+	bufList   chan string
 	bufMutex  sync.Mutex
 }
 
+type result struct {
+	c   chan struct{}
+	dat []byte
+}
+
 func (d DB) InitBuffer(size int) {
-	d.lookupBuf = haxmap.New[string, []byte]()
-	d.bufList = list.New()
-	for ; size > 0; size-- {
-		d.bufList.PushBack(nil)
-	}
+	d.lookupBuf = haxmap.New[string, *result]()
+	d.bufList = make(chan string, size+10)
 }
 
 // Create a WORM db using the os.File handle to write a Write-Once-Read-Many
@@ -108,9 +109,22 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 		n--
 	}
 
+	var haxRec *result
 	if d.lookupBuf != nil {
-		if val, ok := d.lookupBuf.Get(string(needle)); ok {
-			return handler(val)
+		var myChan = make(chan (struct{}))
+		defer close(myChan)
+		haxRec = &result{c: myChan}
+		var ok bool
+		haxRec, ok = d.lookupBuf.GetOrSet(string(needle), haxRec)
+		if ok {
+			if len(haxRec.dat) == 0 {
+				<-haxRec.c // Ensure the record is ready for use (channel is closed)
+			}
+			if len(haxRec.dat) > 0 {
+				// A record has been found!
+				return handler(haxRec.dat)
+			}
+			return nil
 		}
 	}
 
@@ -141,23 +155,23 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 
 		// Test if match is found
 		if bytes.HasPrefix(rec, needle) {
-			if d.lookupBuf != nil {
-				// A buffer is defined, add this element to the buffer
-
-				// Create a copy in memory
+			if haxRec != nil {
+				// Create a copy in memory to store value
 				tmp := make([]byte, len(rec))
-				d.bufMutex.Lock()
-				// Add this to hash map and list
-				d.lookupBuf.Set(string(tmp[:len(needle)]), tmp)
-				d.bufList.PushFront(tmp)
+				copy(tmp, rec)
+				haxRec.dat = tmp
 
-				// Get the front and remove it
-				first := d.bufList.Front()
-				d.bufList.Remove(first)
-				if first.Value != nil {
-					d.lookupBuf.Del(first.Value.(string))
+				// If the channel is filled, do some clearing
+				if cap(d.bufList)-len(d.bufList) < 10 {
+					d.bufMutex.Lock()
+					for cap(d.bufList)-len(d.bufList) < 10 {
+						d.lookupBuf.Del(<-d.bufList)
+					}
+					d.bufMutex.Unlock()
 				}
-				d.bufMutex.Unlock()
+
+				// Store our result needle for future fifo clearning
+				d.bufList <- b2s(tmp[:len(needle)])
 			}
 			return handler(rec)
 		}
