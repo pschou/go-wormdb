@@ -138,7 +138,7 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 		haxRec, ok = d.lookupBuf.GetOrSet(string(needle), haxRec)
 		if ok {
 			if Debug {
-				log.Println("using buffer")
+				log.Printf("Using cache for %q", needle)
 			}
 			if len(haxRec.dat) == 0 {
 				<-haxRec.c // Ensure the record is ready for use (channel is closed)
@@ -148,10 +148,13 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 				return handler(haxRec.dat)
 			}
 			// Buffered a failed to find entry record
+			if Debug {
+				log.Printf("No record cache for %q", needle)
+			}
 			return nil
 		}
 		if Debug {
-			log.Println("making buffer")
+			log.Printf("Making cache for %q", needle)
 		}
 	}
 
@@ -183,6 +186,7 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 		// Test if match is found
 		if bytes.HasPrefix(rec, needle) {
 			if haxRec != nil {
+				log.Printf("Storing cache for %q", needle)
 				// Create a copy in memory to store value
 				tmp := make([]byte, len(rec))
 				copy(tmp, rec)
