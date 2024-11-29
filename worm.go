@@ -5,12 +5,16 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"slices"
 	"sync"
 
 	"github.com/alphadose/haxmap"
 )
+
+// Turn on debug logging
+var Debug bool
 
 type DB struct {
 	Index    [][]byte
@@ -111,12 +115,17 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 
 	var haxRec *result
 	if d.lookupBuf != nil {
-		var myChan = make(chan (struct{}))
+		var (
+			myChan = make(chan (struct{}))
+			ok     bool
+		)
 		defer close(myChan)
 		haxRec = &result{c: myChan}
-		var ok bool
 		haxRec, ok = d.lookupBuf.GetOrSet(string(needle), haxRec)
 		if ok {
+			if Debug {
+				log.Println("using buffer")
+			}
 			if len(haxRec.dat) == 0 {
 				<-haxRec.c // Ensure the record is ready for use (channel is closed)
 			}
@@ -124,7 +133,11 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 				// A record has been found!
 				return handler(haxRec.dat)
 			}
+			// Buffered a failed to find entry record
 			return nil
+		}
+		if Debug {
+			log.Println("making buffer")
 		}
 	}
 
@@ -162,7 +175,7 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 				haxRec.dat = tmp
 
 				// If the channel is filled, do some clearing
-				if cap(d.bufList)-len(d.bufList) < 10 {
+				if cap(d.bufList)-len(d.bufList) < 5 {
 					d.bufMutex.Lock()
 					for cap(d.bufList)-len(d.bufList) < 10 {
 						d.lookupBuf.Del(<-d.bufList)
