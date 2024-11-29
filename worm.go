@@ -16,7 +16,15 @@ import (
 // Turn on debug logging
 var Debug bool
 
+// noCopy implements sync.Locker so that go vet can trigger
+// warnings when types embedding noCopy are copied.
+type noCopy struct{}
+
+func (c *noCopy) Lock()   {}
+func (c *noCopy) Unlock() {}
+
 type DB struct {
+	_        noCopy
 	Index    [][]byte
 	file     *os.File
 	offset   int64 // steps of blocksize
@@ -38,7 +46,7 @@ type result struct {
 	dat []byte
 }
 
-func (d DB) InitCache(size int) {
+func (d *DB) InitCache(size int) {
 	if Debug {
 		log.Println("Creating cache", size)
 	}
