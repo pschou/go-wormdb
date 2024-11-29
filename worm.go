@@ -36,6 +36,7 @@ type DB struct {
 	writeBuf      *bufio.Writer
 	written       int64
 	blocksizeMask int64
+	block         []byte
 
 	// Lookup buffer
 	lookupBuf *haxmap.Map[string, *result]
@@ -77,6 +78,7 @@ func New(file *os.File, offset, blocksize int) (*DB, error) {
 		offset:        int64(offset / blocksize),
 		shift:         shift,
 		blocksizeMask: int64(blocksize - 1),
+		block:         make([]byte, blocksize),
 		readpool:      sync.Pool{New: func() interface{} { return make([]byte, blocksize) }},
 		writeBuf:      bufio.NewWriterSize(file, blocksize),
 		prev:          make([]byte, 0, 256),
@@ -99,11 +101,10 @@ func Open(file *os.File, offset, blocksize int64) (*DB, error) {
 	}
 	//fmt.Println("bs", blocksize, "offset", offset, "shift", shift)
 	return &DB{
-		file:          file,
-		offset:        offset / blocksize,
-		shift:         shift,
-		blocksizeMask: int64(blocksize - 1),
-		readpool:      sync.Pool{New: func() interface{} { return make([]byte, blocksize) }},
+		file:     file,
+		offset:   offset / blocksize,
+		shift:    shift,
+		readpool: sync.Pool{New: func() interface{} { return make([]byte, blocksize) }},
 	}, nil
 }
 
@@ -270,9 +271,7 @@ func (d *DB) Add(rec []byte) (err error) {
 	}
 
 	d.written += int64(avail)
-	for ; avail > 0; avail-- {
-		d.writeBuf.WriteByte(0)
-	}
+	d.writeBuf.Write(d.block[:avail])
 
 	tmp := make([]byte, len(rec))
 	copy(tmp, rec)
@@ -293,8 +292,6 @@ func (d *DB) Finalize() (err error) {
 	var wb *bufio.Writer
 	wb, d.writeBuf = d.writeBuf, nil
 	if wb != nil {
-		wb.WriteByte(0)
-		wb.WriteByte(0)
 		err = wb.Flush()
 		d.file.Sync()
 	}
