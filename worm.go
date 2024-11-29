@@ -186,7 +186,9 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 		// Test if match is found
 		if bytes.HasPrefix(rec, needle) {
 			if haxRec != nil {
-				log.Printf("Storing cache for %q", needle)
+				if Debug {
+					log.Printf("Storing cache for %q", needle)
+				}
 				// Create a copy in memory to store value
 				tmp := make([]byte, len(rec))
 				copy(tmp, rec)
