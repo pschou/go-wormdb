@@ -38,7 +38,10 @@ type result struct {
 	dat []byte
 }
 
-func (d DB) InitBuffer(size int) {
+func (d DB) InitCache(size int) {
+	if Debug {
+		log.Println("Creating cache", size)
+	}
 	d.lookupBuf = haxmap.New[string, *result]()
 	d.bufList = make(chan string, size+10)
 }
@@ -115,6 +118,9 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 
 	var haxRec *result
 	if d.lookupBuf != nil {
+		if Debug {
+			log.Printf("Querying cache for %q", needle)
+		}
 		var (
 			myChan = make(chan (struct{}))
 			ok     bool
