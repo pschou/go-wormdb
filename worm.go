@@ -32,8 +32,10 @@ type DB struct {
 	readpool sync.Pool
 
 	// Writing functions (only available when newly created before finalize)
-	prev     []byte
-	writeBuf *bufio.Writer
+	prev          []byte
+	writeBuf      *bufio.Writer
+	written       int64
+	blocksizeMask int64
 
 	// Lookup buffer
 	lookupBuf *haxmap.Map[string, *result]
@@ -71,12 +73,13 @@ func New(file *os.File, offset, blocksize int) (*DB, error) {
 	}
 	//fmt.Println("bs", blocksize, "offset", offset, "shift", shift)
 	return &DB{
-		file:     file,
-		offset:   int64(offset / blocksize),
-		shift:    shift,
-		readpool: sync.Pool{New: func() interface{} { return make([]byte, blocksize) }},
-		writeBuf: bufio.NewWriterSize(file, blocksize),
-		prev:     make([]byte, 0, 256),
+		file:          file,
+		offset:        int64(offset / blocksize),
+		shift:         shift,
+		blocksizeMask: int64(blocksize - 1),
+		readpool:      sync.Pool{New: func() interface{} { return make([]byte, blocksize) }},
+		writeBuf:      bufio.NewWriterSize(file, blocksize),
+		prev:          make([]byte, 0, 256),
 	}, nil
 }
 
@@ -96,10 +99,11 @@ func Open(file *os.File, offset, blocksize int64) (*DB, error) {
 	}
 	//fmt.Println("bs", blocksize, "offset", offset, "shift", shift)
 	return &DB{
-		file:     file,
-		offset:   offset / blocksize,
-		shift:    shift,
-		readpool: sync.Pool{New: func() interface{} { return make([]byte, blocksize) }},
+		file:          file,
+		offset:        offset / blocksize,
+		shift:         shift,
+		blocksizeMask: int64(blocksize - 1),
+		readpool:      sync.Pool{New: func() interface{} { return make([]byte, blocksize) }},
 	}, nil
 }
 
@@ -232,8 +236,11 @@ func (d *DB) Add(rec []byte) (err error) {
 		copy(tmp, rec)
 		d.Index = append(d.Index, tmp)
 		d.writeBuf.WriteByte(byte(len(rec)))
+		d.written++
 		//fmt.Println("writing to buf", string(rec))
-		_, err = d.writeBuf.Write(rec)
+		var n int
+		n, err = d.writeBuf.Write(rec)
+		d.written += int64(n)
 		d.prev = append(d.prev, rec...)
 		return
 	}
@@ -249,19 +256,21 @@ func (d *DB) Add(rec []byte) (err error) {
 	}
 
 	// Check if space is available in current block
-	//curSize := d.writeBuf.Buffered()
-	//fmt.Println("curSize=", curSize, "avail=", d.writeBuf.Available())
-	if d.writeBuf.Available() >= len(rec)-reuse+2 {
+	avail := int(d.blocksizeMask-(d.written&d.blocksizeMask)) + 1
+	if avail >= len(rec)-reuse+2 {
 		d.writeBuf.WriteByte(byte(reuse))
 		d.writeBuf.WriteByte(byte(len(rec) - reuse))
-		_, err = d.writeBuf.Write(rec[reuse:])
+		d.written += 2
+		var n int
+		n, err = d.writeBuf.Write(rec[reuse:])
+		d.written += int64(n)
 		d.prev = d.prev[:0]
 		d.prev = append(d.prev, rec...)
 		return
 	}
 
-	for i := d.writeBuf.Available(); i > 0; i-- {
-		//fmt.Println("padding 0")
+	d.written += int64(avail)
+	for ; avail > 0; avail-- {
 		d.writeBuf.WriteByte(0)
 	}
 
@@ -270,27 +279,30 @@ func (d *DB) Add(rec []byte) (err error) {
 	d.Index = append(d.Index, tmp)
 	//fmt.Printf("index = %q\n", d.Index)
 	d.writeBuf.WriteByte(byte(len(rec)))
-	_, err = d.writeBuf.Write(rec)
+	d.written++
+	var n int
+	n, err = d.writeBuf.Write(rec)
+	d.written += int64(n)
 	d.prev = d.prev[:0]
 	d.prev = append(d.prev, rec...)
 	return
 }
 
 // Finalize the database write mode and switch to read mode.
-func (d DB) Finalize() (err error) {
-	if d.writeBuf != nil {
-		for i := d.writeBuf.Available(); i > 0; i-- {
-			//fmt.Println("padding 0")
-			d.writeBuf.WriteByte(0)
-		}
-		err = d.writeBuf.Flush()
-		d.writeBuf = nil
+func (d *DB) Finalize() (err error) {
+	var wb *bufio.Writer
+	wb, d.writeBuf = d.writeBuf, nil
+	if wb != nil {
+		wb.WriteByte(0)
+		wb.WriteByte(0)
+		err = wb.Flush()
+		d.file.Sync()
 	}
 	return
 }
 
 // Close the database and the file handle at the same time.
-func (d DB) Close() error {
+func (d *DB) Close() error {
 	d.Finalize()
 	return d.file.Close()
 }
