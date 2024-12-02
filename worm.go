@@ -7,10 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
-	"slices"
 	"sync"
-
-	"github.com/alphadose/haxmap"
 )
 
 // Turn on debug logging
@@ -25,7 +22,6 @@ func (c *noCopy) Unlock() {}
 
 type DB struct {
 	_        noCopy
-	Index    [][]byte
 	file     *os.File
 	offset   int64 // steps of blocksize
 	shift    int   // must be in shift bits
@@ -35,77 +31,93 @@ type DB struct {
 	prev          []byte
 	writeBuf      *bufio.Writer
 	written       int64
+	blocksize     int64
 	blocksizeMask int64
 	block         []byte
 
 	// Lookup buffer
-	lookupBuf *haxmap.Map[string, *result]
-	bufList   chan string
-	bufMutex  sync.Mutex
+	cache  Cache
+	search Search
 }
 
-type result struct {
+func WithCache(c Cache) func(*DB) {
+	return func(d *DB) {
+		d.cache = c
+	}
+}
+
+func WithSearch(s Search) func(*DB) {
+	return func(d *DB) {
+		d.search = s
+	}
+}
+
+func WithOffset(v int64) func(*DB) {
+	return func(d *DB) {
+		d.offset = v
+	}
+}
+
+func WithBlockSize(v int64) func(*DB) {
+	return func(d *DB) {
+		d.blocksize = v
+	}
+}
+
+type Result struct {
 	c   chan struct{}
 	dat []byte
 }
 
-func (d *DB) InitCache(size int) {
-	if Debug {
-		log.Println("Creating cache", size)
-	}
-	d.lookupBuf = haxmap.New[string, *result]()
-	d.bufList = make(chan string, size+10)
-}
-
 // Create a WORM db using the os.File handle to write a Write-Once-Read-Many
 // ordered database optimized for reading based on sectors.
-func New(file *os.File, offset, blocksize int) (*DB, error) {
-	// Make sure the blocksize is a power of 2
-	if blocksize >= 256 && blocksize&(blocksize-1) != 0 {
-		return nil, fmt.Errorf("Invalid block size %d.", blocksize)
+func New(file *os.File, options ...func(*DB)) (*DB, error) {
+	db, err := Open(file, options...)
+	if err != nil {
+		return db, err
 	}
-	// Make sure the offset is an interval of blocksize
-	if offset%blocksize != 0 {
-		return nil, fmt.Errorf("Offset %d must be a step of block size %d.", offset, blocksize)
-	}
-	shift := 0
-	for ; 1<<shift < blocksize; shift++ {
-		//fmt.Println("shift:", shift)
-	}
-	//fmt.Println("bs", blocksize, "offset", offset, "shift", shift)
-	return &DB{
-		file:          file,
-		offset:        int64(offset / blocksize),
-		shift:         shift,
-		blocksizeMask: int64(blocksize - 1),
-		block:         make([]byte, blocksize),
-		readpool:      sync.Pool{New: func() interface{} { return make([]byte, blocksize) }},
-		writeBuf:      bufio.NewWriterSize(file, blocksize),
-		prev:          make([]byte, 0, 256),
-	}, nil
+
+	db.writeBuf = bufio.NewWriterSize(file, int(db.blocksize))
+
+	return db, nil
 }
 
 // Open a wormdb for use, note that the index must be provided out of band.
-func Open(file *os.File, offset, blocksize int64) (*DB, error) {
+func Open(file *os.File, options ...func(*DB)) (*DB, error) {
+	db := &DB{
+		file:      file,
+		blocksize: 4096,
+		prev:      make([]byte, 0, 256),
+	}
+	for _, o := range options {
+		o(db)
+	}
+
+	// Make sure a search function is defined
+	if db.search == nil {
+		return nil, fmt.Errorf("Search method must be defined")
+	}
+
 	// Make sure the blocksize is a power of 2
-	if blocksize >= 256 && blocksize&(blocksize-1) != 0 {
-		return nil, fmt.Errorf("Invalid block size %d.", blocksize)
+	if db.blocksize < 256 || db.blocksize&(db.blocksize-1) != 0 {
+		return nil, fmt.Errorf("Invalid block size %d.", db.blocksize)
 	}
+
 	// Make sure the offset is an interval of blocksize
-	if offset%blocksize != 0 {
-		return nil, fmt.Errorf("Offset %d must be a step of block size %d.", offset, blocksize)
+	if db.offset%db.blocksize != 0 {
+		return nil, fmt.Errorf("Offset %d must be a step of block size %d.", db.offset, db.blocksize)
 	}
+	db.offset = int64(db.offset / db.blocksize)
+
 	shift := 0
-	for ; 1<<shift < blocksize; shift++ {
-		//fmt.Println("shift:", shift)
+	for ; 1<<shift < db.blocksize; shift++ {
 	}
-	//fmt.Println("bs", blocksize, "offset", offset, "shift", shift)
-	return &DB{
-		file:     file,
-		offset:   offset / blocksize,
-		shift:    shift,
-		readpool: sync.Pool{New: func() interface{} { return make([]byte, blocksize) }},
-	}, nil
+	db.shift = shift
+	db.blocksizeMask = int64(db.blocksize - 1)
+	db.block = make([]byte, db.blocksize)
+	db.readpool = sync.Pool{New: func() interface{} { return make([]byte, db.blocksize) }}
+
+	return db, nil
 }
 
 // Search for a record in a wormdb and call func if a match is found.  Only the
@@ -114,23 +126,9 @@ func Open(file *os.File, offset, blocksize int64) (*DB, error) {
 // The slice MUST be copied to a local variable as the underlying byte slice
 // will be reused in future function calls.
 func (d DB) Get(needle []byte, handler func([]byte) error) error {
-	n, ok := slices.BinarySearchFunc(d.Index, needle, bytes.Compare)
-	//fmt.Println("binary search found", n, ok)
-	if !ok {
-		if n == 0 {
-			// Try providing the first
-			if bytes.HasPrefix(d.Index[0], needle) {
-				return handler(d.Index[0])
-			}
-			// If the record is before the first, give up
-			return nil
-		}
-		// Go back one step
-		n--
-	}
-
-	var haxRec *result
-	if d.lookupBuf != nil {
+	var hasRec *Result
+	// Do the cache check first to avoid walking or searching if a cache already exists
+	if d.cache != nil {
 		if Debug {
 			log.Printf("Querying cache for %q", needle)
 		}
@@ -139,18 +137,18 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 			ok     bool
 		)
 		defer close(myChan)
-		haxRec = &result{c: myChan}
-		haxRec, ok = d.lookupBuf.GetOrSet(string(needle), haxRec)
+		hasRec = &Result{c: myChan}
+		hasRec, ok = d.cache.GetOrSet(string(needle), hasRec)
 		if ok {
 			if Debug {
 				log.Printf("Using cache for %q", needle)
 			}
-			if len(haxRec.dat) == 0 {
-				<-haxRec.c // Ensure the record is ready for use (channel is closed)
+			if len(hasRec.dat) == 0 {
+				<-hasRec.c // Ensure the record is ready for use (channel is closed)
 			}
-			if len(haxRec.dat) > 0 {
+			if len(hasRec.dat) > 0 {
 				// A record has been found!
-				return handler(haxRec.dat)
+				return handler(hasRec.dat)
 			}
 			// Buffered a failed to find entry record
 			if Debug {
@@ -163,53 +161,54 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 		}
 	}
 
+	// Do the semi expensive search to find the sector on disk where the record should be located.
+	n, first, matched := d.search.Find(needle)
+	if matched {
+		return handler(first)
+	}
+	if len(first) == 0 {
+		// An error happened, first in index was not found. Do not continue.
+		return nil
+	}
+
+	// Do the expensive part and read the sector from the disk where the record should be located.
 	var b []byte
 	{
 		// Pull a buffer from the pool to read to
 		buf := d.readpool.Get().([]byte)
 		defer d.readpool.Put(buf)
-		//fmt.Println("reading at", (int64(n)+d.offset)<<d.shift)
+
+		// Read the sector from disk where the record should be at
 		rn, err := d.file.ReadAt(buf, (int64(n)+d.offset)<<d.shift)
-		//fmt.Println("reading bytes", rn)
 		if err != nil && err != io.EOF {
 			return err
 		}
+
+		// Trim down the result, this should only happen at the end of the file.
 		b = buf[0:rn]
-		//fmt.Printf("read %q\n", b)
 	}
 
 	rec := make([]byte, 0, 256)
 
 	for len(b) > 0 && b[0] > 0 {
-		//fmt.Println("len b", len(b), "b0", b[0])
+		// The first in a sector contains the record length
 		if len(b) <= int(b[0]) {
-			return fmt.Errorf("Record too short block %d", n)
+			return fmt.Errorf("Record too short at block %d", n)
 		}
 		rec = append(rec, b[1:int(b[0])+1]...)
-		//fmt.Printf("rec %q   bslice %q\n", rec, b[1:(int(b[0])+1)])
 
 		// Test if match is found
 		if bytes.HasPrefix(rec, needle) {
-			if haxRec != nil {
+			if hasRec != nil {
 				if Debug {
 					log.Printf("Storing cache for %q", needle)
 				}
 				// Create a copy in memory to store value
 				tmp := make([]byte, len(rec))
 				copy(tmp, rec)
-				haxRec.dat = tmp
+				hasRec.dat = tmp
 
-				// If the channel is filled, do some clearing
-				if cap(d.bufList)-len(d.bufList) < 5 {
-					d.bufMutex.Lock()
-					for cap(d.bufList)-len(d.bufList) < 10 {
-						d.lookupBuf.Del(<-d.bufList)
-					}
-					d.bufMutex.Unlock()
-				}
-
-				// Store our result needle for future fifo clearning
-				d.bufList <- b2s(tmp[:len(needle)])
+				d.cache.Stored(b2s(tmp[:len(needle)]))
 			}
 			return handler(rec)
 		}
@@ -218,8 +217,11 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 		if len(b) == 0 {
 			return nil
 		}
-		//fmt.Printf("b %q\n", b)
+
 		// Determine the re-used portion of the record
+		if len(rec) < int(b[0]) {
+			return fmt.Errorf("Record prefix size too big at block %d", n)
+		}
 		rec = rec[:b[0]]
 		//fmt.Printf("trimmed rec %q\n", rec)
 		b = b[1:]
@@ -232,10 +234,10 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 // Add a record to a wormdb when it is in write mode.
 func (d *DB) Add(rec []byte) (err error) {
 	// Handle first record case
-	if len(d.Index) == 0 {
+	if d.written == 0 {
 		tmp := make([]byte, len(rec))
 		copy(tmp, rec)
-		d.Index = append(d.Index, tmp)
+		d.search.Add(tmp)
 		d.writeBuf.WriteByte(byte(len(rec)))
 		d.written++
 		//fmt.Println("writing to buf", string(rec))
@@ -275,8 +277,7 @@ func (d *DB) Add(rec []byte) (err error) {
 
 	tmp := make([]byte, len(rec))
 	copy(tmp, rec)
-	d.Index = append(d.Index, tmp)
-	//fmt.Printf("index = %q\n", d.Index)
+	d.search.Add(tmp)
 	d.writeBuf.WriteByte(byte(len(rec)))
 	d.written++
 	var n int

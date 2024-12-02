@@ -15,7 +15,10 @@ func init() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	db, err := bwdb.New(f, 0, 4096)
+	bs := &bwdb.SearchBinary{}
+	db, err := bwdb.New(f,
+		bwdb.WithSearch(bs),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -32,7 +35,7 @@ func init() {
 	db.Add([]byte("hello world qrs00000000000000000000000000000000000000000000000000000000000000000000000000000000"))
 	db.Add([]byte("hello world tuv00000000000000000000000000000000000000000000000000000000000000000000000000000000"))
 	db.Close()
-	index = db.Index
+	index = bs.Index
 }
 
 func ExampleNew() {
@@ -40,7 +43,9 @@ func ExampleNew() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	db, err := bwdb.New(f, 0, 4096)
+	bs := &bwdb.SearchBinary{Index: index}
+	db, err := bwdb.New(f,
+		bwdb.WithSearch(bs))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -64,12 +69,13 @@ func ExampleOpen() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	db, err := bwdb.Open(f, 0, 4096)
+	bs := &bwdb.SearchBinary{Index: index}
+	db, err := bwdb.Open(f,
+		bwdb.WithSearch(bs))
 	if err != nil {
 		log.Fatal(err)
 	}
 	// Note that the index must be stored out of band
-	db.Index = index
 	db.Get([]byte("hello world qrs"), func(rec []byte) error {
 		fmt.Printf("rec: %q err: %v\n", rec, err)
 		return nil
