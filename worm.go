@@ -40,25 +40,27 @@ type DB struct {
 	search Search
 }
 
-func WithCache(c Cache) func(*DB) {
+type Option func(*DB)
+
+func WithCache(c Cache) Option {
 	return func(d *DB) {
 		d.cache = c
 	}
 }
 
-func WithSearch(s Search) func(*DB) {
+func WithSearch(s Search) Option {
 	return func(d *DB) {
 		d.search = s
 	}
 }
 
-func WithOffset(v int64) func(*DB) {
+func WithOffset(v int64) Option {
 	return func(d *DB) {
 		d.offset = v
 	}
 }
 
-func WithBlockSize(v int64) func(*DB) {
+func WithBlockSize(v int64) Option {
 	return func(d *DB) {
 		d.blocksize = v
 	}
@@ -71,7 +73,7 @@ type Result struct {
 
 // Create a WORM db using the os.File handle to write a Write-Once-Read-Many
 // ordered database optimized for reading based on sectors.
-func New(file *os.File, options ...func(*DB)) (*DB, error) {
+func New(file *os.File, options ...Option) (*DB, error) {
 	db, err := Open(file, options...)
 	if err != nil {
 		return db, err
@@ -83,7 +85,7 @@ func New(file *os.File, options ...func(*DB)) (*DB, error) {
 }
 
 // Open a wormdb for use, note that the index must be provided out of band.
-func Open(file *os.File, options ...func(*DB)) (*DB, error) {
+func Open(file *os.File, options ...Option) (*DB, error) {
 	db := &DB{
 		file:      file,
 		blocksize: 4096,
