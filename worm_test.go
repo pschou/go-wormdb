@@ -15,7 +15,7 @@ func init() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	bs := &bwdb.SearchBinary{}
+	bs := &bwdb.BinarySearch{}
 	db, err := bwdb.New(f,
 		bwdb.WithSearch(bs),
 	)
@@ -43,7 +43,7 @@ func ExampleNew() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	bs := &bwdb.SearchBinary{Index: index}
+	bs := &bwdb.BinarySearch{Index: index}
 	db, err := bwdb.New(f,
 		bwdb.WithSearch(bs))
 	if err != nil {
@@ -69,7 +69,7 @@ func ExampleOpen() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	bs := &bwdb.SearchBinary{Index: index}
+	bs := &bwdb.BinarySearch{Index: index}
 	db, err := bwdb.Open(f,
 		bwdb.WithSearch(bs))
 	if err != nil {

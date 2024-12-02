@@ -23,15 +23,15 @@ type Search interface {
 	Find(needle []byte) (sectorId int, closest []byte, wasExactMatch bool)
 }
 
-type SearchBinary struct {
+type BinarySearch struct {
 	Index [][]byte
 }
 
-func (s *SearchBinary) Add(needle []byte) {
+func (s *BinarySearch) Add(needle []byte) {
 	s.Index = append(s.Index, needle)
 }
 
-func (s *SearchBinary) Find(needle []byte) (pos int, closest []byte, exactMatch bool) {
+func (s *BinarySearch) Find(needle []byte) (pos int, closest []byte, exactMatch bool) {
 	pos, exactMatch = slices.BinarySearchFunc(s.Index, needle, bytes.Compare)
 	//fmt.Println("binary search found", n, ok)
 	if !exactMatch {
