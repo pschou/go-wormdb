@@ -134,13 +134,8 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 		if Debug {
 			log.Printf("Querying cache for %q", needle)
 		}
-		var (
-			myChan = make(chan (struct{}))
-			ok     bool
-		)
-		defer close(myChan)
-		hasRec = &Result{c: myChan}
-		hasRec, ok = d.cache.GetOrSet(string(needle), hasRec)
+		var ok bool
+		hasRec, ok = d.cache.GetOrCompute(string(needle), func() *Result { return &Result{c: make(chan (struct{}))} })
 		if ok {
 			if Debug {
 				log.Printf("Using cache for %q", needle)
@@ -158,6 +153,7 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 			}
 			return nil
 		}
+		defer close(hasRec.c)
 		if Debug {
 			log.Printf("Making cache for %q", needle)
 		}
