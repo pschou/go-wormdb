@@ -79,7 +79,7 @@ func New(file *os.File, options ...Option) (*DB, error) {
 		return db, err
 	}
 
-	db.writeBuf = bufio.NewWriterSize(file, int(db.blocksize))
+	db.writeBuf = bufio.NewWriterSize(file, int(db.blocksize*8))
 
 	return db, nil
 }
@@ -235,11 +235,15 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 
 // Add a record to a wormdb when it is in write mode.
 func (d *DB) Add(rec []byte) (err error) {
-	// Handle first record case
-	if d.written == 0 {
+	if d.written&d.blocksizeMask == 0 {
+		// Add the new block to the search index
 		tmp := make([]byte, len(rec))
 		copy(tmp, rec)
 		d.search.Add(tmp)
+	}
+
+	// Handle first record case
+	if d.written == 0 {
 		d.writeBuf.WriteByte(byte(len(rec)))
 		d.written++
 		//fmt.Println("writing to buf", string(rec))
@@ -261,7 +265,7 @@ func (d *DB) Add(rec []byte) (err error) {
 	}
 
 	// Check if space is available in current block
-	avail := int(d.blocksizeMask-(d.written&d.blocksizeMask)) + 1
+	avail := int(d.blocksize - (d.written & d.blocksizeMask))
 	if avail >= len(rec)-reuse+2 {
 		d.writeBuf.WriteByte(byte(reuse))
 		d.writeBuf.WriteByte(byte(len(rec) - reuse))
@@ -277,9 +281,12 @@ func (d *DB) Add(rec []byte) (err error) {
 	d.written += int64(avail)
 	d.writeBuf.Write(d.block[:avail])
 
-	tmp := make([]byte, len(rec))
-	copy(tmp, rec)
-	d.search.Add(tmp)
+	{
+		// Add the new block to the search index
+		tmp := make([]byte, len(rec))
+		copy(tmp, rec)
+		d.search.Add(tmp)
+	}
 	d.writeBuf.WriteByte(byte(len(rec)))
 	d.written++
 	var n int
@@ -292,6 +299,12 @@ func (d *DB) Add(rec []byte) (err error) {
 
 // Finalize the database write mode and switch to read mode.
 func (d *DB) Finalize() (err error) {
+	if d == nil {
+		return nil
+	}
+	if d.search != nil {
+		d.search.Finalize()
+	}
 	var wb *bufio.Writer
 	wb, d.writeBuf = d.writeBuf, nil
 	if wb != nil {
@@ -303,6 +316,9 @@ func (d *DB) Finalize() (err error) {
 
 // Close the database and the file handle at the same time.
 func (d *DB) Close() error {
+	if d == nil {
+		return nil
+	}
 	d.Finalize()
 	return d.file.Close()
 }

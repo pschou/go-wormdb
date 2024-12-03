@@ -2,6 +2,8 @@ package wormdb
 
 import (
 	"bytes"
+	"container/list"
+	"fmt"
 	"slices"
 )
 
@@ -16,19 +18,40 @@ type Search interface {
 	// until the next block is surpassed.  Also-- after the wormdb has been fully
 	// loaded, one must make sure that this input channel has been flushed out
 	// before querying the wormdb.
-	Add(needle []byte)
+	Add(needle []byte) error
 
 	// Called each time Get is called to look up a record and determine the sector
 	// on disk to read from.
 	Find(needle []byte) (sectorId int, closest []byte, wasExactMatch bool)
+
+	// Called after last record has been added.
+	Finalize()
 }
 
 type BinarySearch struct {
 	Index [][]byte
+	list  *list.List
 }
 
-func (s *BinarySearch) Add(needle []byte) {
-	s.Index = append(s.Index, needle)
+func (s *BinarySearch) Add(needle []byte) error {
+	if s.Index != nil {
+		return fmt.Errorf("Could not add %q as search has been finalized", needle)
+	}
+	if s.list == nil {
+		s.list = list.New()
+	}
+	s.list.PushBack(needle)
+	return nil
+}
+
+func (s *BinarySearch) Finalize() {
+	if s.list != nil {
+		s.Index = make([][]byte, s.list.Len())
+		for i, e := 0, s.list.Front(); e != nil; i, e = i+1, e.Next() {
+			s.Index[i] = e.Value.([]byte)
+		}
+		s.list = nil
+	}
 }
 
 func (s *BinarySearch) Find(needle []byte) (pos int, closest []byte, exactMatch bool) {
