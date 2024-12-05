@@ -1,6 +1,7 @@
 package wormdb
 
 import (
+	"container/list"
 	"log"
 	"sync"
 
@@ -19,41 +20,56 @@ type Cache interface {
 type CacheMap struct {
 	_         noCopy
 	lookupBuf *haxmap.Map[string, *Result]
-	bufList   chan string
+	bufList   *list.List
 	bufMutex  sync.Mutex
+	max       int
 
 	// Set this function to handle when a cached value is hit
 	CountHit func(key string)
 }
 
 func NewCacheMap(size int) *CacheMap {
-	c := &CacheMap{}
 	if Debug {
 		log.Println("Creating cache", size)
 	}
-	c.lookupBuf = haxmap.New[string, *Result]()
-	c.bufList = make(chan string, size+10)
-	return c
+	return &CacheMap{
+		max:       size,
+		lookupBuf: haxmap.New[string, *Result](),
+		bufList:   list.New(),
+	}
 }
 
-func (c *CacheMap) GetOrCompute(K string, V func() *Result) (r *Result, found bool) {
-	r, found = c.lookupBuf.GetOrCompute(K, V)
+func (c *CacheMap) GetOrCompute(K string, V func() *Result) (*Result, bool) {
+	myElm, found := c.lookupBuf.GetOrCompute(K, func() *Result {
+		val := V()
+
+		// Fork off the list amendment action
+		go func(K string) {
+			// Need to lock due to container.list not being thread safe!
+			c.bufMutex.Lock()
+			defer c.bufMutex.Unlock()
+
+			// Push the value to the end of the list
+			c.bufList.PushBack(K)
+
+			// If the list is too long, pop off the front and flush it
+			if int(c.bufList.Len()) > c.max {
+				if val, ok := c.bufList.Remove(c.bufList.Front()).(string); ok {
+					c.lookupBuf.Del(val)
+				}
+			}
+		}(K)
+
+		// Return the created value
+		return val
+	})
+
 	if found && c.CountHit != nil {
 		c.CountHit(K)
 	}
-	return
+
+	return myElm, found
 }
 
 func (c *CacheMap) Stored(K string) {
-	// If the channel is filled, do some clearing
-	if cap(c.bufList)-len(c.bufList) < 5 {
-		c.bufMutex.Lock()
-		for cap(c.bufList)-len(c.bufList) < 10 {
-			c.lookupBuf.Del(<-c.bufList)
-		}
-		c.bufMutex.Unlock()
-	}
-
-	// Store our result needle for future fifo clearning
-	c.bufList <- K
 }

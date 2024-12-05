@@ -29,10 +29,14 @@ type Search interface {
 }
 
 type BinarySearch struct {
-	Index [][]byte
-	list  *list.List
+	Index                [][]byte
+	list                 *list.List
+	lowerByte, upperByte []int
 }
 
+// Add a record into the searchable list.  Usually this involves an in-memory
+// cache of the first record in each block and built using a link list so as to
+// avoid growing memory and doing a slice copy.
 func (s *BinarySearch) Add(needle []byte) error {
 	if s.Index != nil {
 		return fmt.Errorf("Could not add %q as search has been finalized", needle)
@@ -44,19 +48,62 @@ func (s *BinarySearch) Add(needle []byte) error {
 	return nil
 }
 
+// Do not call this directly, but instead wormdb calls this once the database
+// has been flushed to disk.
 func (s *BinarySearch) Finalize() {
 	if s.list != nil {
-		s.Index = make([][]byte, s.list.Len())
-		for i, e := 0, s.list.Front(); e != nil; i, e = i+1, e.Next() {
+		var list *list.List
+		list, s.list = s.list, nil
+		s.Index = make([][]byte, list.Len())
+		for i, e := 0, list.Front(); e != nil; i, e = i+1, e.Next() {
 			s.Index[i] = e.Value.([]byte)
 		}
-		s.list = nil
+		s.MakeFirstByte()
 	}
 }
 
+// After a database has been loaded into memory from a save, call this to build
+// the lower and upper byte bounds for faster searching capabilities.
+func (s *BinarySearch) MakeFirstByte() {
+	return
+	var (
+		lb    = make([]int, 256)
+		ub    = make([]int, 256)
+		cur   = byte(255)
+		upper = len(s.Index)
+	)
+	for i := upper - 1; i >= 0; i-- {
+		if s.Index[i][0] != cur {
+			for cur > s.Index[i][0] {
+				ub[cur] = upper
+				lb[cur] = i
+				cur--
+			}
+			upper = i + 1
+		}
+	}
+	for cur > 0 {
+		ub[cur] = upper
+		cur--
+	}
+	ub[0] = upper
+	s.lowerByte, s.upperByte = lb, ub
+	//log.Printf("lb: %#v\n", s.lowerByte)
+	//log.Printf("ub: %#v\n", s.upperByte)
+}
+
+// Find will search for a needle in the Index and return either the match or
+// the lower bound where the match would be located between two entries.  The
+// purpose of the lower bound is to ensure that the match will be contained in
+// the block retrieved from slow storage, such as a disk.
 func (s *BinarySearch) Find(needle []byte) (pos int, closest []byte, exactMatch bool) {
-	pos, exactMatch = slices.BinarySearchFunc(s.Index, needle, bytes.Compare)
-	//fmt.Println("binary search found", n, ok)
+	if len(s.lowerByte) > 0 {
+		fb := needle[0]
+		pos, exactMatch = slices.BinarySearchFunc(s.Index[s.lowerByte[fb]:s.upperByte[fb]], needle, bytes.Compare)
+		pos += s.lowerByte[fb]
+	} else {
+		pos, exactMatch = slices.BinarySearchFunc(s.Index, needle, bytes.Compare)
+	}
 	if !exactMatch {
 		if pos == 0 {
 			// Try providing the first

@@ -115,7 +115,7 @@ func Open(file *os.File, options ...Option) (*DB, error) {
 	for ; 1<<shift < db.blocksize; shift++ {
 	}
 	db.shift = shift
-	db.blocksizeMask = int64(db.blocksize - 1)
+	db.blocksizeMask = int64(db.blocksize) - 1
 	db.block = make([]byte, db.blocksize)
 	db.readpool = sync.Pool{New: func() interface{} { return make([]byte, db.blocksize) }}
 
@@ -221,9 +221,7 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 			return fmt.Errorf("Record prefix size too big at block %d", n)
 		}
 		rec = rec[:b[0]]
-		//fmt.Printf("trimmed rec %q\n", rec)
 		b = b[1:]
-		//fmt.Printf("loop b %q\n", b)
 		//return nil, nil
 	}
 	return nil
@@ -242,7 +240,6 @@ func (d *DB) Add(rec []byte) (err error) {
 	if d.written == 0 {
 		d.writeBuf.WriteByte(byte(len(rec)))
 		d.written++
-		//fmt.Println("writing to buf", string(rec))
 		var n int
 		n, err = d.writeBuf.Write(rec)
 		d.written += int64(n)
@@ -298,12 +295,12 @@ func (d *DB) Finalize() (err error) {
 	if d == nil {
 		return nil
 	}
-	if d.search != nil {
-		d.search.Finalize()
-	}
 	var wb *bufio.Writer
 	wb, d.writeBuf = d.writeBuf, nil
 	if wb != nil {
+		if d.search != nil {
+			d.search.Finalize()
+		}
 		err = wb.Flush()
 		d.file.Sync()
 	}

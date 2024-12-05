@@ -8,7 +8,9 @@ import (
 	bwdb "github.com/pschou/go-wormdb"
 )
 
-var index [][]byte
+var (
+	index [][]byte
+)
 
 func init() {
 	f, err := os.Create("test.db")
@@ -22,6 +24,15 @@ func init() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	for i := 0; i < 100; i++ {
+		db.Add([]byte(fmt.Sprintf("aaaaaaaaaaaaaa%08d00000000000000000000000000000000000000000000000000000000000000000000000000000000", i)))
+	}
+	for i := 0; i < 100; i++ {
+		db.Add([]byte(fmt.Sprintf("b hello world p%08d00000000000000000000000000000000000000000000000000000000000000000000000000000000", i)))
+	}
+	for i := 0; i < 100; i++ {
+		db.Add([]byte(fmt.Sprintf("c hello world p%08d00000000000000000000000000000000000000000000000000000000000000000000000000000000", i)))
+	}
 	db.Add([]byte("hello world"))
 	db.Add([]byte("hello world abc00000000000000000000000000000000000000000000000000000000000000000000000000000000"))
 	db.Add([]byte("hello world def00000000000000000000000000000000000000000000000000000000000000000000000000000000"))
@@ -34,6 +45,7 @@ func init() {
 	}
 	db.Add([]byte("hello world qrs00000000000000000000000000000000000000000000000000000000000000000000000000000000"))
 	db.Add([]byte("hello world tuv00000000000000000000000000000000000000000000000000000000000000000000000000000000"))
+	//db.Finalize() // Optional as it is called on close below
 	db.Close()
 	index = bs.Index
 }
@@ -43,7 +55,7 @@ func ExampleNew() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	bs := &bwdb.BinarySearch{Index: index}
+	bs := &bwdb.BinarySearch{}
 	db, err := bwdb.New(f,
 		bwdb.WithSearch(bs))
 	if err != nil {
@@ -56,12 +68,12 @@ func ExampleNew() {
 	db.Add([]byte("hello world ghi"))
 
 	db.Finalize()
-	db.Get([]byte("hello world ab"), func(rec []byte) error {
-		fmt.Println(string(rec))
+	err = db.Get([]byte("hello world ab"), func(rec []byte) error {
+		fmt.Println("found:", string(rec))
 		return nil
 	})
 	// Output:
-	// hello world abc
+	// found: hello world abc
 }
 
 func ExampleOpen() {
@@ -70,11 +82,13 @@ func ExampleOpen() {
 		log.Fatal(err)
 	}
 	bs := &bwdb.BinarySearch{Index: index}
+	bs.MakeFirstByte()
 	db, err := bwdb.Open(f,
 		bwdb.WithSearch(bs))
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	// Note that the index must be stored out of band
 	db.Get([]byte("hello world qrs"), func(rec []byte) error {
 		fmt.Printf("rec: %q err: %v\n", rec, err)
