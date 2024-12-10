@@ -31,7 +31,7 @@ type DB struct {
 	prev          []byte
 	writeBuf      *bufio.Writer
 	written       int64
-	blocksize     int64
+	blocksize     int
 	blocksizeMask int64
 	block         []byte
 
@@ -42,25 +42,31 @@ type DB struct {
 
 type Option func(*DB)
 
+// Include an optional cache to help with speeding up repeat calls.
 func WithCache(c Cache) Option {
 	return func(d *DB) {
 		d.cache = c
 	}
 }
 
+// Include a call back for the search function to use.  The built option uses
+// the binary search to find records within the index.
 func WithSearch(s Search) Option {
 	return func(d *DB) {
 		d.search = s
 	}
 }
 
+// Offset at the beginning of the file to ignore.  This must be a step size of
+// the blocksize.
 func WithOffset(v int64) Option {
 	return func(d *DB) {
 		d.offset = v
 	}
 }
 
-func WithBlockSize(v int64) Option {
+// Define a custom block size, if left unset the value of 4096 is used.
+func WithBlockSize(v int) Option {
 	return func(d *DB) {
 		d.blocksize = v
 	}
@@ -106,10 +112,10 @@ func Open(file *os.File, options ...Option) (*DB, error) {
 	}
 
 	// Make sure the offset is an interval of blocksize
-	if db.offset%db.blocksize != 0 {
+	if db.offset%int64(db.blocksize) != 0 {
 		return nil, fmt.Errorf("Offset %d must be a step of block size %d.", db.offset, db.blocksize)
 	}
-	db.offset = int64(db.offset / db.blocksize)
+	db.offset = int64(db.offset / int64(db.blocksize))
 
 	shift := 0
 	for ; 1<<shift < db.blocksize; shift++ {
@@ -227,6 +233,67 @@ func (d DB) Get(needle []byte, handler func([]byte) error) error {
 	return nil
 }
 
+// Walk will return all the records in a wormdb.
+//
+// The slice MUST be copied to a local variable as the underlying byte slice
+// will be reused in future function calls.
+func (d DB) Walk(handler func([]byte) error) error {
+	// Do the expensive part and read the sector from the disk where the record should be located.
+	var (
+		b    []byte
+		done bool
+		n    int
+		rec  = make([]byte, 0, 256)
+	)
+	// Pull a buffer from the pool to read to
+	buf := d.readpool.Get().([]byte)
+	defer d.readpool.Put(buf)
+
+	for !done {
+		// Read the sector from disk where the record should be at
+		rn, err := d.file.ReadAt(buf, (int64(n)+d.offset)<<d.shift)
+		done = err == io.EOF
+		if err != nil && err != io.EOF {
+			return err
+		}
+		n++
+
+		// Trim down the result, this should only happen at the end of the file.
+		b = buf[0:rn]
+		rec = rec[:0]
+
+		for len(b) > 0 && b[0] > 0 {
+			// The first in a sector contains the record length
+			if len(b) <= int(b[0]) {
+				return fmt.Errorf("Record too short at block %d", n)
+			}
+			rec = append(rec, b[1:int(b[0])+1]...)
+
+			// Process record
+			err = handler(rec)
+			if err != nil {
+				return err
+			}
+
+			// Trim off the record from the block
+			b = b[b[0]+1:]
+			if len(b) == 0 {
+				// Done with this block, continue to next
+				break
+			}
+
+			// Determine the re-used portion of the record
+			if len(rec) < int(b[0]) {
+				return fmt.Errorf("Record prefix size too big at block %d", n)
+			}
+			rec = rec[:b[0]]
+			b = b[1:]
+			//return nil, nil
+		}
+	}
+	return nil
+}
+
 // Add a record to a wormdb when it is in write mode.
 func (d *DB) Add(rec []byte) (err error) {
 	if d.written&d.blocksizeMask == 0 {
@@ -258,7 +325,7 @@ func (d *DB) Add(rec []byte) (err error) {
 	}
 
 	// Check if space is available in current block
-	avail := int(d.blocksize - (d.written & d.blocksizeMask))
+	avail := d.blocksize - int(d.written&d.blocksizeMask)
 	if avail >= len(rec)-reuse+2 {
 		d.writeBuf.WriteByte(byte(reuse))
 		d.writeBuf.WriteByte(byte(len(rec) - reuse))
@@ -290,7 +357,7 @@ func (d *DB) Add(rec []byte) (err error) {
 	return
 }
 
-// Finalize the database write mode and switch to read mode.
+// Finalize the database, write any buffers to disk, and build search index.
 func (d *DB) Finalize() (err error) {
 	if d == nil {
 		return nil

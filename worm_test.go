@@ -41,7 +41,6 @@ func init() {
 	db.Add([]byte("hello world mno00000000000000000000000000000000000000000000000000000000000000000000000000000000"))
 	for i := 0; i < 100; i++ {
 		db.Add([]byte(fmt.Sprintf("hello world p%08d00000000000000000000000000000000000000000000000000000000000000000000000000000000", i)))
-		//fmt.Printf("adding:  hello world p%08d00000000000000000000000000000000000000000000000000000000000000000000000000000000\n", i)
 	}
 	db.Add([]byte("hello world qrs00000000000000000000000000000000000000000000000000000000000000000000000000000000"))
 	db.Add([]byte("hello world tuv00000000000000000000000000000000000000000000000000000000000000000000000000000000"))
@@ -74,6 +73,41 @@ func ExampleNew() {
 	})
 	// Output:
 	// found: hello world abc
+}
+
+func ExampleWalk() {
+	f, err := os.Create("walk.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	bs := &bwdb.BinarySearch{}
+	db, err := bwdb.New(f,
+		bwdb.WithSearch(bs))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	db.Add([]byte("hello world"))
+	db.Add([]byte("hello world abc"))
+	db.Add([]byte("hello world def"))
+	db.Add([]byte("hello world ghi"))
+	// Making the file larger so it spans blocks
+	//for i := 4; i < 100; i++ {
+	//	db.Add([]byte(fmt.Sprintf("hello world p%08d00000000000000000000000000000000000000000000000000000000000000000000000000000000", i)))
+	//}
+
+	db.Finalize()
+	i := 0
+	err = db.Walk(func(rec []byte) error {
+		fmt.Println("step", i, string(rec))
+		i++
+		return nil
+	})
+	// Output:
+	// step 0 hello world
+	// step 1 hello world abc
+	// step 2 hello world def
+	// step 3 hello world ghi
 }
 
 func ExampleOpen() {

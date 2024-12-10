@@ -20,9 +20,11 @@ type Search interface {
 	// before querying the wormdb.
 	Add(needle []byte) error
 
-	// Called each time Get is called to look up a record and determine the sector
-	// on disk to read from.
-	Find(needle []byte) (sectorId int, closest []byte, wasExactMatch bool)
+	// Look up a record and determine the sector on disk to read from.
+	Find(needle []byte) (sectorId int, lower []byte, wasExactMatch bool)
+
+	// Return the lower and upper bounds of a block for the given needle.
+	FindBounds(needle []byte) (sectorId int, lower, upper []byte, wasExactMatch bool)
 
 	// Called after last record has been added.
 	Finalize()
@@ -96,7 +98,7 @@ func (s *BinarySearch) MakeFirstByte() {
 // the lower bound where the match would be located between two entries.  The
 // purpose of the lower bound is to ensure that the match will be contained in
 // the block retrieved from slow storage, such as a disk.
-func (s *BinarySearch) Find(needle []byte) (pos int, closest []byte, exactMatch bool) {
+func (s *BinarySearch) Find(needle []byte) (pos int, lower []byte, exactMatch bool) {
 	if len(s.lowerByte) > 0 {
 		fb := needle[0]
 		pos, exactMatch = slices.BinarySearchFunc(s.Index[s.lowerByte[fb]:s.upperByte[fb]], needle, bytes.Compare)
@@ -117,4 +119,39 @@ func (s *BinarySearch) Find(needle []byte) (pos int, closest []byte, exactMatch 
 		pos--
 	}
 	return pos, s.Index[pos], exactMatch
+}
+
+// FindBounds will search for a needle in the Index and return either the match
+// or the lower bound where the match would be located between two entries.
+// The purpose of the lower bound is to ensure that the match will be contained
+// in the block retrieved from slow storage (such as a disk) and the upper
+// bound is useful for segmenting data to make sure the result lies within the
+// block.
+func (s *BinarySearch) FindBounds(needle []byte) (pos int, lower, upper []byte, exactMatch bool) {
+	if len(s.lowerByte) > 0 {
+		fb := needle[0]
+		pos, exactMatch = slices.BinarySearchFunc(s.Index[s.lowerByte[fb]:s.upperByte[fb]], needle, bytes.Compare)
+		pos += s.lowerByte[fb]
+	} else {
+		pos, exactMatch = slices.BinarySearchFunc(s.Index, needle, bytes.Compare)
+	}
+	if !exactMatch {
+		if pos == 0 {
+			// Try providing the first
+			if bytes.HasPrefix(s.Index[0], needle) {
+				if pos < len(s.Index)-1 {
+					return pos, s.Index[0], s.Index[1], true
+				}
+				return 0, s.Index[0], nil, true
+			}
+			// If the record is before the first, give up
+			return 0, nil, s.Index[0], false
+		}
+		// Go back one step
+		pos--
+	}
+	if pos < len(s.Index)-1 {
+		return pos, s.Index[pos], s.Index[pos+1], exactMatch
+	}
+	return pos, s.Index[pos], nil, exactMatch
 }
