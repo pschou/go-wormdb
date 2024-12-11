@@ -75,6 +75,16 @@ func NewBinarySearch() *BinarySearch {
 	}
 }
 
+// Build a search index on disk and in memory for the constructed wormdb.
+// This is in opposed to the [NewMemoryBinarySearch], which uses memory
+// instead of disk and is ready for use when Finalize() is called.
+// One must then load the index from disk into memory with LoadIndexToMemory().
+func NewDiskMemBinarySearch(file *os.File) *BinarySearch {
+	db := NewDiskBinarySearch(file)
+	db.list = list.New()
+	return db
+}
+
 // Build a search index on disk for the constructed wormdb.
 // This is in opposed to the [NewMemoryBinarySearch], which uses memory
 // instead of disk and is ready for use when Finalize() is called.
@@ -137,7 +147,6 @@ func (s *BinarySearch) Add(needle []byte) error {
 		tmp := make([]byte, len(needle))
 		copy(tmp, needle)
 		s.list.PushBack(tmp)
-		return nil
 	}
 	if s.disk != nil {
 		err := s.disk.Add(needle)
@@ -146,6 +155,9 @@ func (s *BinarySearch) Add(needle []byte) error {
 		}
 		s.disk = nil
 		return err
+	}
+	if s.list != nil {
+		return nil
 	}
 	return fmt.Errorf("Could not add %q as no storage has been defined", needle)
 }
