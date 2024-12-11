@@ -134,6 +134,9 @@ func Open(file *os.File, options ...Option) (*DB, error) {
 // The slice MUST be copied to a local variable as the underlying byte slice
 // will be reused in future function calls.
 func (d DB) Get(needle []byte, handler func([]byte) error) error {
+	if d.search == nil {
+		return fmt.Errorf("No search method defined for finding %q", needle)
+	}
 	var hasRec *Result
 	// Do the cache check first to avoid walking or searching if a cache already exists
 	if d.cache != nil {
@@ -298,9 +301,9 @@ func (d DB) Walk(handler func([]byte) error) error {
 func (d *DB) Add(rec []byte) (err error) {
 	if d.written&d.blocksizeMask == 0 {
 		// Add the new block to the search index
-		tmp := make([]byte, len(rec))
-		copy(tmp, rec)
-		d.search.Add(tmp)
+		if d.search != nil {
+			d.search.Add(rec)
+		}
 	}
 
 	// Handle first record case
@@ -341,12 +344,11 @@ func (d *DB) Add(rec []byte) (err error) {
 	d.written += int64(avail)
 	d.writeBuf.Write(d.block[:avail])
 
-	{
-		// Add the new block to the search index
-		tmp := make([]byte, len(rec))
-		copy(tmp, rec)
-		d.search.Add(tmp)
+	// Add the new block to the search index
+	if d.search != nil {
+		d.search.Add(rec)
 	}
+
 	d.writeBuf.WriteByte(byte(len(rec)))
 	d.written++
 	var n int
