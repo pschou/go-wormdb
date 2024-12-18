@@ -115,13 +115,14 @@ func NewDiskBinarySearch(file *os.File) *BinarySearch {
 func (s *BinarySearch) LoadIndexToMemory() error {
 	if len(s.Index) == 0 && s.disk != nil {
 		list := list.New()
-		err := s.disk.Walk(func(rec []byte) error {
+		walker := s.disk.NewWalker()
+		for walker.Scan() {
+			rec := walker.Bytes()
 			tmp := make([]byte, len(rec))
 			copy(tmp, rec)
 			list.PushBack(tmp)
-			return nil
-		})
-		if err != nil {
+		}
+		if err := walker.Err(); err != nil {
 			return err
 		}
 		s.Index = make([][]byte, list.Len())

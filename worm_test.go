@@ -1,6 +1,7 @@
 package wormdb_test
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -99,11 +100,12 @@ func ExampleWalk() {
 
 	db.Finalize()
 	i := 0
-	err = db.Walk(func(rec []byte) error {
+	walker := db.NewWalker()
+	for walker.Scan() {
+		rec := walker.Bytes()
 		fmt.Println("step", i, string(rec))
 		i++
-		return nil
-	})
+	}
 	// Output:
 	// step 0 hello world
 	// step 1 hello world abc
@@ -160,6 +162,7 @@ func ExampleNewDiskBinarySearch() {
 		fmt.Println("found:", string(rec))
 		return nil
 	})
+
 	// Output:
 	// found: hello world def
 }
@@ -217,4 +220,59 @@ func ExampleOpen() {
 	db.Close()
 	// Output:
 	// rec: "hello world qrs00000000000000000000000000000000000000000000000000000000000000000000000000000000" err: <nil>
+}
+
+func ExampleNewMerge() {
+	f1, err := os.Create("new_merged.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	bs1 := bwdb.NewBinarySearch()
+	db1, err := bwdb.New(f1,
+		bwdb.WithSearch(bs1))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db1.Close()
+	db1.Add([]byte("hello world"))
+	db1.Add([]byte("hello world aabc"))
+	db1.Add([]byte("hello world cdef"))
+	db1.Add([]byte("hello world ghi"))
+	db1.Finalize()
+
+	f2, err := os.Create("new_merged2.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	bs2 := bwdb.NewBinarySearch()
+	db2, err := bwdb.New(f2,
+		bwdb.WithSearch(bs2),
+		bwdb.WithMerge(db1, bytes.Compare))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db2.Close()
+	db2.Add([]byte("hello world"))
+	db2.Add([]byte("hello world abc"))
+	db2.Add([]byte("hello world def"))
+	db2.Add([]byte("hello world ghi"))
+
+	db2.Finalize()
+
+	i := 0
+	walker := db2.NewWalker()
+	for walker.Scan() {
+		rec := walker.Bytes()
+		fmt.Println("step", i, string(rec))
+		i++
+	}
+
+	// Output:
+	// step 0 hello world
+	// step 1 hello world aabc
+	// step 2 hello world abc
+	// step 3 hello world cdef
+	// step 4 hello world def
+	// step 5 hello world ghi
 }
