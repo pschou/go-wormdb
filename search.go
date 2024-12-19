@@ -173,6 +173,8 @@ func (s *BinarySearch) Finalize() error {
 		for i, e := 0, list.Front(); e != nil; i, e = i+1, e.Next() {
 			s.Index[i] = e.Value.([]byte)
 		}
+	}
+	if len(s.lowerByte) == 0 {
 		s.makeFirstByte()
 	}
 	if s.disk != nil {
