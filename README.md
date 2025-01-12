@@ -23,25 +23,27 @@ abc124dob
 ```
 
 ```golang
-func ExampleNew() {
-  f, err := os.Create("new.db")
-  if err != nil {
-    log.Fatal(err)
-  }
-  db, err := bwdb.New(f, 0, 4096)
-  if err != nil {
-    log.Fatal(err)
-  }
-  defer db.Close()
-  db.Add([]byte("hello world"))
-  db.Add([]byte("hello world abc"))
-  db.Add([]byte("hello world def"))
-  db.Add([]byte("hello world ghi"))
+	f, err := os.Create("new.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	bs := worm.NewBinarySearch()
+	db, err := worm.New(f,
+		worm.WithSearch(bs))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	db.Add([]byte("hello world"))
+	db.Add([]byte("hello world abc"))
+	db.Add([]byte("hello world def"))
+	db.Add([]byte("hello world ghi"))
 
-  db.Finalize()
-  rec, _ := db.Get([]byte("hello world ab"))
-  fmt.Println(string(rec))
-  // Output:
-  // hello world abc
-}
+	db.Finalize()
+	err = db.Get([]byte("hello world ab"), func(rec []byte) error {
+		fmt.Println("found:", string(rec))
+		return nil
+	})
+	// Output:
+	// found: hello world abc
 ```
