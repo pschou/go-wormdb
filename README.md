@@ -12,7 +12,7 @@ first record will be returned or an error.  Make sure your index is unique.
 
 An example of how the database works:
 
-If one is looking for the record starting with `abc123` they can use the Find()
+If one is looking for the record starting with `abc123` they can use the Get()
 function to find this record:
 
 An example database (one entry per line)
