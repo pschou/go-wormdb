@@ -461,8 +461,10 @@ func (d *DB) add(rec []byte) (err error) {
 		return
 	}
 
-	d.written += int64(avail)
-	d.writeBuf.Write(d.block[:avail])
+	if avail != d.blocksize {
+		d.written += int64(avail)
+		d.writeBuf.Write(d.block[:avail])
+	}
 
 	// Add the new block to the search index
 	if d.search != nil {
