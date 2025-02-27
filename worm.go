@@ -448,7 +448,8 @@ func (d *DB) add(rec []byte) (err error) {
 
 	// Check if space is available in current block
 	avail := d.blocksize - int(d.written&d.blocksizeMask)
-	if avail >= len(rec)-reuse+2 {
+	if avail >= len(rec)-reuse+2 && avail != d.blocksizeMask {
+		// Trim downed prefix size record write for subsequent records
 		d.writeBuf.WriteByte(byte(reuse))
 		d.writeBuf.WriteByte(byte(len(rec) - reuse))
 		d.written += 2
